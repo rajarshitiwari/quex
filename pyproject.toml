@@ -21,4 +21,5 @@ dev = [
     "matplotlib>=3.10.9",
     "networkx>=3.4.2",
     "pytest>=9.0.3",
+    "qiskit>=2.4.1",
 ]
