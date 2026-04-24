@@ -17,11 +17,13 @@ By ingesting standard intermediate representations (like OpenQASM 3.0), Quex act
 
 3. **The Execution Engines (WIP):** Wrappers around optimized, low-level linear algebra libraries (NumPy, SciPy Sparse, cuQuantum, etc.) to crunch the matrices efficiently.
 
+
 ## Installation and Setup
 
 Quex is managed using [uv](https://docs.astral.sh/uv/), the lightning-fast Python package manager written in Rust.
 
-## Prerequisites
+
+## Prerequisites
 
 If you don't have uv installed, we recommend the standalone installer:
 
