@@ -14,7 +14,30 @@ Example
 """
 
 import random
+from quex.circuit import Circuit
 
+def generate_random_ansatz(num_qubits: int, depth: int) -> Circuit:
+    """
+    Generates a 'Hardware-Efficient Ansatz' circuit.
+    This consists of alternating layers of random rotations and linear entanglement.
+    It is the standard template for Quantum Machine Learning and pseudo-random states.
+    """
+    qc = Circuit(num_qubits)
+    
+    for d in range(depth):
+        # 1. Layer of Random Rotations (Rx, Ry, Rz)
+        for i in range(num_qubits):
+            gate = random.choice(['rx', 'ry', 'rz'])
+            angle = random.uniform(0, 3.14159 * 2) # Random angle between 0 and 2pi
+            qc.add_operation(gate, i, params=[angle])
+            
+        # 2. Layer of Linear Entanglement (CX gates connecting neighbors)
+        # We alternate even/odd pairs to create a "brickwork" pattern
+        offset = d % 2  
+        for i in range(offset, num_qubits - 1, 2):
+            qc.add_operation('cx', [i, i + 1])
+            
+    return qc
 
 def random_qasm(num_qubits: int = 3, depth: int = 3) -> str:
     """Generates a random OpenQASM 3 string with standard gates.

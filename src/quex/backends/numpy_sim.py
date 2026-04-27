@@ -28,7 +28,8 @@ class NumpySimulator:
             "y": np.array([[0, -1j], [1j, 0]], dtype=np.complex128),
             "z": np.array([[1, 0], [0, -1]], dtype=np.complex128),
             "h": np.array([[1, 1], [1, -1]], dtype=np.complex128) / np.sqrt(2),
-            # 2-Qubit Gates (reshaped to 2, 2, 2, 2)
+            # 2-Qubit gates must be reshaped into (2, 2, 2, 2) tensors
+            # [output_q0, output_q1, input_q0, input_q1]
             "cx": np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=np.complex128).reshape(2, 2, 2, 2),
             # 3-Qubit Gates (reshaped to 2, 2, 2, 2, 2, 2)
             "ccx": ccx_mat.reshape(2, 2, 2, 2, 2, 2),
@@ -52,60 +53,6 @@ class NumpySimulator:
         elif name == "rz":
             theta = params[0]
             return np.array([[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=np.complex128)
-
-        raise NotImplementedError(f"Gate '{name}' is not yet supported by NumpySimulator.")
-
-    def run(self, circuit) -> np.ndarray:
-        """Executes the circuit and returns the final N-dimensional state tensor."""
-        num_qubits = circuit.num_qubits
-        if num_qubits == 0:
-            return np.array([])
-
-        state = np.zeros((2,) * num_qubits, dtype=np.complex128)
-        state[(0,) * num_qubits] = 1.0
-
-        for op in circuit.operations:
-            gate_name = op["gate"]
-            params = op["params"]
-
-            targets = [t[1] for t in op["targets"] if t[1] is not None]
-            k = len(targets)
-
-            gate_tensor = self._get_gate_tensor(gate_name, params, k)
-
-            gate_input_axes = list(range(k, 2 * k))
-            state = np.tensordot(gate_tensor, state, axes=(gate_input_axes, targets))
-            state = np.moveaxis(state, source=list(range(k)), destination=targets)
-
-        return state
-
-
-class NumpySimulator1:
-    """
-    A high-performance, tensor-network style statevector simulator using NumPy.
-    """
-
-    def __init__(self):
-        # 1. Pre-compute static gates to save time during loops
-        self._static_gates = {
-            "x": np.array([[0, 1], [1, 0]], dtype=np.complex128),
-            "h": np.array([[1, 1], [1, -1]], dtype=np.complex128) / np.sqrt(2),
-            "z": np.array([[1, 0], [0, -1]], dtype=np.complex128),
-            # 2-Qubit gates must be reshaped into (2, 2, 2, 2) tensors
-            # [output_q0, output_q1, input_q0, input_q1]
-            "cx": np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=np.complex128).reshape(2, 2, 2, 2),
-        }
-
-    def _get_gate_tensor(self, name: str, params: list, num_targets: int) -> np.ndarray:
-        """Retrieves or calculates the gate matrix and reshapes it for tensor math."""
-        if name in self._static_gates:
-            return self._static_gates[name]
-
-        # Dynamically build parameterized gates
-        if name == "rx":
-            theta = params[0]
-            matrix = np.array([[np.cos(theta / 2), -1j * np.sin(theta / 2)], [-1j * np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
-            return matrix
 
         raise NotImplementedError(f"Gate '{name}' is not yet supported by NumpySimulator.")
 

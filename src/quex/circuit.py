@@ -1,7 +1,5 @@
 # src/quex/circuit.py
-from typing import Any, Dict, List, Optional
-
-import networkx as nx
+from typing import List, Dict, Any, Optional, Union
 
 from quex.parser import parse_qasm_string
 
@@ -26,38 +24,100 @@ class Circuit:
         else:
             self.wire_labels = wire_labels
 
-        # The dependency graph (DAG) for execution routing
-        self.dag = nx.DiGraph()
-        # Internal tracker to know where to draw edges
-        self._last_seen = {}
+        self._layers: Optional[List[List[Dict[str, Any]]]] = None
 
-    def add_operation(self, gate: str, targets: List[tuple], params: Optional[List[float]] = None):
+    def add_operation(self, gate: str, targets: Union[int, List[int], List[tuple]], params: Optional[List[float]] = None):
         """
         Programmatically add an operation to the circuit.
+        Friendly UX: 'targets' accepts a single int, a list of ints, or internal tuples.
         """
         if params is None:
             params = []
 
-        op = {"gate": gate.lower(), "params": params, "targets": targets}
+        # --- Input Normalisation --- 
+        normalised_targets = []
+
+        # Case 1: User passed a single integer -> qc.add_operation('x', 0)
+        if isinstance(targets, int):
+            normalised_targets.append(("q", targets))
+
+        # Case 2: User passed a list
+        elif isinstance(targets, list):
+            for t in targets:
+                if isinstance(t, int):
+                    # qc.add_operation('cx', [0, 1])
+                    normalised_targets.append(("q", t))
+                elif isinstance(t, tuple):
+                    # Internal parser format: qc.add_operation('x', [('q', 0)])
+                    normalised_targets.append(t)
+                else:
+                    raise ValueError(f"Target {t} must be an integer or tuple.")
+        else:
+            raise ValueError("Targets must be an int, list of ints, or list of tuples.")
+
+        op = {
+            "gate": gate.lower(),
+            "params": params,
+            "targets": normalised_targets
+        }
         self.operations.append(op)
 
-        # Update the DAG
-        op_index = len(self.operations) - 1
-        self._update_dag(op_index, op)
+        # --- if circuit changed, re-evaluate layers
+        self._layers = None
 
-    def _update_dag(self, index: int, operation: Dict[str, Any]):
-        """Dynamically builds the execution dependency graph."""
-        gate_name = operation["gate"].upper()
-        targets = operation["targets"]
+    @property
+    def layers(self) -> List[List[Dict[str, Any]]]:
+        """
+        Returns the operations grouped by parallel execution moments.
+        Calculates only when necessary (Lazy Evaluation).
+        """
+        if self._layers is None:
+            self._layers = self._build_layers()
+        return self._layers
 
-        node_id = f"{index}: {gate_name}"
-        self.dag.add_node(node_id, gate=gate_name, targets=targets)
+    @property
+    def depth(self) -> int:
+        """
+        Circuit depth computation
 
-        # Draw edges from the previous gate on these qubits to this new gate
-        for qubit in targets:
-            if qubit in self._last_seen:
-                self.dag.add_edge(self._last_seen[qubit], node_id, label=f"q[{qubit[1]}]")
-            self._last_seen[qubit] = node_id
+        Returns
+        -------
+        int
+            Circuit depth
+        """
+        return len(self.layers)
+    
+    def _build_layers(self) -> list:
+        """
+        Organizes the flat list of operations into parallel execution layers (moments).
+        This determines the true 'depth' of the circuit and enables parallel batched execution.
+        """
+        wire_depths = {i: 0 for i in range(self.num_qubits)}
+        layers = []
+
+        for op in self.operations:
+            targets = [t[1] for t in op["targets"] if t[1] is not None]
+            if not targets:
+                continue
+
+            # A multi-qubit gate blocks all wires between its top and bottom targets
+            top, bottom = min(targets), max(targets)
+            blocked_wires = range(top, bottom + 1)
+
+            # Find the deepest wire this gate touches
+            op_depth = max(wire_depths[w] for w in blocked_wires)
+
+            # Create a new layer if needed
+            while len(layers) <= op_depth:
+                layers.append([])
+
+            layers[op_depth].append(op)
+
+            # Update the depth tracker for all blocked wires
+            for w in blocked_wires:
+                wire_depths[w] = op_depth + 1
+
+        return layers
 
     @classmethod
     def from_qasm(cls, qasm_string: str) -> "Circuit":
@@ -96,42 +156,6 @@ class Circuit:
 
         return circuit
 
-    def get_layers(self) -> list:
-        """
-        Organizes the flat list of operations into parallel execution layers (moments).
-        This determines the true 'depth' of the circuit and enables parallel batched execution.
-        """
-        wire_depths = {i: 0 for i in range(self.num_qubits)}
-        layers = []
-
-        for op in self.operations:
-            targets = [t[1] for t in op["targets"] if t[1] is not None]
-            if not targets:
-                continue
-
-            # A multi-qubit gate blocks all wires between its top and bottom targets
-            top, bottom = min(targets), max(targets)
-            blocked_wires = range(top, bottom + 1)
-
-            # Find the deepest wire this gate touches
-            op_depth = max(wire_depths[w] for w in blocked_wires)
-
-            # Create a new layer if needed
-            while len(layers) <= op_depth:
-                layers.append([])
-
-            layers[op_depth].append(op)
-
-            # Update the depth tracker for all blocked wires
-            for w in blocked_wires:
-                wire_depths[w] = op_depth + 1
-
-        return layers
-
-    def depth(self) -> int:
-        """Returns the critical path depth of the circuit."""
-        return len(self.get_layers())
-
     def to_text_diagram(self) -> str:
         """
         Generates a native ASCII/Unicode representation of the quantum circuit,
@@ -141,7 +165,7 @@ class Circuit:
             return "Empty Circuit"
 
         # get the optimised layers of operation
-        layers = self.get_layers()
+        layers = self.layers
 
         # --- 2. SETUP WIRES ---
         max_label_len = max(len(label) for label in self.wire_labels)
