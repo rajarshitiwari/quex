@@ -56,8 +56,14 @@ class NumpySimulator:
 
         raise NotImplementedError(f"Gate '{name}' is not yet supported by NumpySimulator.")
 
-    def run(self, circuit) -> np.ndarray:
-        """Executes the circuit and returns the final N-dimensional state tensor."""
+    def run(self, circuit, parameter_binds: dict = None) -> np.ndarray:
+        """
+        Executes the circuit and returns the final N-dimensional state tensor.
+        Accepts an optional dictionary of parameter bindings.
+        """
+        if parameter_binds is None:
+            parameter_binds = {}
+
         num_qubits = circuit.num_qubits
         if num_qubits == 0:
             return np.array([])
@@ -70,13 +76,26 @@ class NumpySimulator:
         # 2. Iterate through the topological operations
         for op in circuit.operations:
             gate_name = op["gate"]
-            params = op["params"]
+
+            # --- Parameter Binding part ---
+            bound_params = []
+            if op["params"]:
+                for p in op["params"]:
+                    # If the parameter is a string (variable name), look it up in the dict
+                    if isinstance(p, str):
+                        if p not in parameter_binds:
+                            raise ValueError(f"Unbound parameter: '{p}'. Please provide it in parameter_binds.")
+                        bound_params.append(float(parameter_binds[p]))
+                    else:
+                        # It's already a number
+                        bound_params.append(p)
+            # -------------------------------
 
             # Extract clean integer targets (e.g., [0, 1])
             targets = [t[1] for t in op["targets"] if t[1] is not None]
             k = len(targets)  # How many qubits this gate touches
 
-            gate_tensor = self._get_gate_tensor(gate_name, params, k)
+            gate_tensor = self._get_gate_tensor(gate_name, bound_params, k)
 
             # --- THE TENSOR CONTRACTION MAGIC ---
 
