@@ -1,7 +1,9 @@
 # src/quex/parser.py
+
 from typing import List, Dict, Any
 import openqasm3
 from openqasm3 import ast
+
 
 def parse_qasm_string(qasm_string: str) -> List[Dict[str, Any]]:
     """
@@ -10,7 +12,6 @@ def parse_qasm_string(qasm_string: str) -> List[Dict[str, Any]]:
     Returns a list of dictionaries, where each dict represents a gate
     and the target qubits it acts upon.
     """
-    # Parse the string into an Abstract Syntax Tree
     try:
         program = openqasm3.parse(qasm_string)
     except Exception as e:
@@ -18,21 +19,32 @@ def parse_qasm_string(qasm_string: str) -> List[Dict[str, Any]]:
 
     circuit_ops = []
 
-    # Walk the AST to extract gates and their targets
     for statement in program.statements:
         if isinstance(statement, ast.QuantumGate):
             gate_name = statement.name.name
-
+            
+            # 1. Extract Target Qubits (from statement.qubits)
             target_qubits = []
-            for arg in statement.arguments:
-                if isinstance(arg, ast.IndexedIdentifier):
-                    # E.g., q[0] -> name is 'q', index is 0
-                    qubit_name = arg.name.name
-                    qubit_index = arg.indices[0][0].value
+            for q in statement.qubits:
+                if isinstance(q, ast.IndexedIdentifier):
+                    qubit_name = q.name.name
+                    qubit_index = q.indices[0][0].value
                     target_qubits.append((qubit_name, qubit_index))
+                elif isinstance(q, ast.Identifier):
+                    # Edge case: if the gate targets a whole register e.g., 'h q;'
+                    target_qubits.append((q.name, None))
+            
+            # 2. Extract Parameters/Angles (from statement.arguments)
+            params = []
+            if statement.arguments:
+                for arg in statement.arguments:
+                    if hasattr(arg, 'value'):
+                        # Catches both ast.RealLiteral and ast.IntegerLiteral
+                        params.append(arg.value)
 
             circuit_ops.append({
                 "gate": gate_name,
+                "params": params,
                 "targets": target_qubits
             })
 

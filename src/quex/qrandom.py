@@ -1,20 +1,30 @@
 """
 Random Circuits
 ---------------
+
+
+Example
+-------
+.. jupyter-execute::
+
+    if __name__ == "__main__":
+        print(random_qasm(num_qubits=3, depth=5))
+        print(random_qiskit(num_qubits=3, depth=5))
+
 """
 
 import random
 
 
-def generate_random_qasm(num_qubits: int, depth: int) -> str:
+def random_qasm(num_qubits: int = 3, depth: int = 3) -> str:
     """Generates a random OpenQASM 3 string with standard gates.
 
     Parameters
     ----------
     num_qubits : int
-        Number of qubits
+        Number of qubits, by default 3
     depth : int
-        Circuit depth
+        Circuit depth, by default 3
 
     Returns
     -------
@@ -50,6 +60,38 @@ def generate_random_qasm(num_qubits: int, depth: int) -> str:
     return "\n".join(lines)
 
 
+def random_qiskit(num_qubits: int = 3, depth: int = 3) -> str:
+    """
+    Generate a random circuit with num_qubits and a depth, measure=False
+    prevents it from adding classical registers just yet.
+
+    Parameters
+    ----------
+    num_qubits : int, optional
+        Number of qubits, by default 3
+    depth : int, optional
+        Circuit depth, by default 3
+
+    Returns
+    -------
+    str
+        A random quantum circuit in OpenQASM 3 format.
+    """
+    try:
+        from qiskit.circuit.random import random_circuit
+        from qiskit import qasm3
+    except ImportError:
+        raise ImportError(
+            "Qiskit is not installed. To use this function, "
+            "install dev dependencies: `uv add --dev qiskit`"
+        )
+
+    qc = random_circuit(num_qubits=4, depth=5, measure=False)
+    # Export directly to an OpenQASM 3 string
+    qasm_string = qasm3.dumps(qc)
+    return qasm_string
+
 # Example usage:
 if __name__ == "__main__":
-    print(generate_random_qasm(num_qubits=3, depth=5))
+    print(random_qasm(num_qubits=3, depth=5))
+    print(random_qiskit(num_qubits=3, depth=5))
