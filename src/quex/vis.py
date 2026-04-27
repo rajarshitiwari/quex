@@ -87,3 +87,42 @@ def draw_structured_dag(dag):
 
     plt.title("Quex Execution DAG (Time Flow ->)")
     plt.show()
+
+
+def draw_qiskit(circuit):
+    """
+    Temporary dev-tool: Maps a Quex Circuit to a Qiskit QuantumCircuit
+    and uses Qiskit's Matplotlib drawer to visualize it.
+    """
+    try:
+        from qiskit import QuantumCircuit
+    except ImportError:
+        raise ImportError("Qiskit is not installed. To use the Qiskit visualizer, install dev dependencies: `uv add --dev qiskit matplotlib`")
+
+    # 1. Initialize a Qiskit circuit with the exact same number of qubits
+    qiskit_qc = QuantumCircuit(circuit.num_qubits)
+
+    # 2. Iterate through your parsed operations and map them
+    for op in circuit.operations:
+        gate_name = op["gate"]
+        params = op["params"]
+
+        # Extract just the integer indices from your target tuples: e.g., ('q', 0) -> 0
+        qubit_indices = [target[1] for target in op["targets"] if target[1] is not None]
+
+        # Use Python's getattr to dynamically call the Qiskit function
+        # e.g., if gate_name is 'h', this gets qiskit_qc.h
+        gate_method = getattr(qiskit_qc, gate_name, None)
+
+        if gate_method:
+            if params:
+                # E.g., qiskit_qc.rx(1.57, 0)
+                gate_method(*params, *qubit_indices)
+            else:
+                # E.g., qiskit_qc.cx(0, 1)
+                gate_method(*qubit_indices)
+        else:
+            print(f"Warning: Could not map Quex gate '{gate_name}' to Qiskit.")
+
+    # 3. Draw the circuit using Matplotlib
+    return qiskit_qc.draw(output="mpl", style="iqp")

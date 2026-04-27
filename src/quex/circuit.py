@@ -76,3 +76,78 @@ class Circuit:
             circuit.add_operation(gate=op["gate"], targets=op["targets"], params=op["params"])
 
         return circuit
+
+    def to_text_diagram(self) -> str:
+        """
+        Generates a native, zero-dependency ASCII/Unicode representation
+        of the quantum circuit.
+        """
+        if self.num_qubits == 0:
+            return "Empty Circuit"
+
+        wires = [f"q[{i}]: ──" for i in range(self.num_qubits)]
+
+        for op in self.operations:
+            gate_name = op["gate"].upper()
+
+            # IMPROVEMENT 1: Format parameterized gates to 2 decimal places
+            if op["params"]:
+                params_str = ",".join(str(round(p, 2)) for p in op["params"])
+                gate_str = f"{gate_name}({params_str})"
+            else:
+                gate_str = gate_name
+
+            targets = [t[1] for t in op["targets"] if t[1] is not None]
+            if not targets:
+                continue
+
+            col_width = len(gate_str) + 4
+
+            if len(targets) == 1:
+                t = targets[0]
+                for i in range(self.num_qubits):
+                    if i == t:
+                        wires[i] += f"[{gate_str}]".center(col_width, "─")
+                    else:
+                        wires[i] += "─" * col_width
+
+            elif len(targets) == 2:
+                ctrl, tgt = targets[0], targets[1]
+                top, bottom = min(ctrl, tgt), max(ctrl, tgt)
+
+                for i in range(self.num_qubits):
+                    if i == ctrl:
+                        wires[i] += "■".center(col_width, "─")
+                    elif i == tgt:
+                        symbol = "X" if gate_name == "CX" else f"[{gate_str}]"
+                        wires[i] += symbol.center(col_width, "─")
+                    elif top < i < bottom:
+                        wires[i] += "│".center(col_width, "─")
+                    else:
+                        wires[i] += "─" * col_width
+
+            # IMPROVEMENT 2: Handle 3-qubit gates (like CCX / Toffoli)
+            elif len(targets) == 3:
+                ctrl1, ctrl2, tgt = targets[0], targets[1], targets[2]
+                top, bottom = min(targets), max(targets)
+
+                for i in range(self.num_qubits):
+                    if i in (ctrl1, ctrl2):
+                        wires[i] += "■".center(col_width, "─")
+                    elif i == tgt:
+                        symbol = "X" if gate_name in ["CCX", "TOFFOLI"] else f"[{gate_str}]"
+                        wires[i] += symbol.center(col_width, "─")
+                    elif top < i < bottom:
+                        wires[i] += "│".center(col_width, "─")
+                    else:
+                        wires[i] += "─" * col_width
+
+        return "\n".join(wires)
+
+    def __repr__(self) -> str:
+        """Allows the circuit to draw itself automatically in standard REPLs."""
+        return self.to_text_diagram()
+
+    def __str__(self) -> str:
+        """Allows `print(circuit)` to output the text diagram."""
+        return self.to_text_diagram()
