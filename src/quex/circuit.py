@@ -1,5 +1,5 @@
 # src/quex/circuit.py
-from typing import List, Dict, Any, Optional, Union
+from typing import Any, Dict, List, Optional, Union
 
 from quex.parser import parse_qasm_string
 
@@ -34,7 +34,7 @@ class Circuit:
         if params is None:
             params = []
 
-        # --- Input Normalisation --- 
+        # --- Input Normalisation ---
         normalised_targets = []
 
         # Case 1: User passed a single integer -> qc.add_operation('x', 0)
@@ -55,11 +55,7 @@ class Circuit:
         else:
             raise ValueError("Targets must be an int, list of ints, or list of tuples.")
 
-        op = {
-            "gate": gate.lower(),
-            "params": params,
-            "targets": normalised_targets
-        }
+        op = {"gate": gate.lower(), "params": params, "targets": normalised_targets}
         self.operations.append(op)
 
         # --- if circuit changed, re-evaluate layers
@@ -86,7 +82,7 @@ class Circuit:
             Circuit depth
         """
         return len(self.layers)
-    
+
     def _build_layers(self) -> list:
         """
         Organizes the flat list of operations into parallel execution layers (moments).
