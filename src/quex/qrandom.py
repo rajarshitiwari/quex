@@ -78,8 +78,8 @@ def random_qiskit(num_qubits: int = 3, depth: int = 3) -> str:
         A random quantum circuit in OpenQASM 3 format.
     """
     try:
-        from qiskit.circuit.random import random_circuit
         from qiskit import qasm3
+        from qiskit.circuit.random import random_circuit
     except ImportError:
         raise ImportError(
             "Qiskit is not installed. To use this function, "

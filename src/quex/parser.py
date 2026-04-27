@@ -1,6 +1,7 @@
 # src/quex/parser.py
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
+
 import openqasm3
 from openqasm3 import ast
 
@@ -22,7 +23,7 @@ def parse_qasm_string(qasm_string: str) -> List[Dict[str, Any]]:
     for statement in program.statements:
         if isinstance(statement, ast.QuantumGate):
             gate_name = statement.name.name
-            
+
             # 1. Extract Target Qubits (from statement.qubits)
             target_qubits = []
             for q in statement.qubits:
@@ -33,7 +34,7 @@ def parse_qasm_string(qasm_string: str) -> List[Dict[str, Any]]:
                 elif isinstance(q, ast.Identifier):
                     # Edge case: if the gate targets a whole register e.g., 'h q;'
                     target_qubits.append((q.name, None))
-            
+
             # 2. Extract Parameters/Angles (from statement.arguments)
             params = []
             if statement.arguments:

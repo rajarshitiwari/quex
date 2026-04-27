@@ -24,3 +24,26 @@ dev = [
     "qiskit>=2.4.1",
     "ruff>=0.15.12",
 ]
+
+[tool.ruff]
+# Replaces both Black's and Flake8's max-line-length
+line-length = 180
+# Replaces Black's target-version
+target-version = "py310"
+
+[tool.ruff.lint]
+# Select the rule sets you want:
+# E = pycodestyle errors, W = pycodestyle warnings, F = pyflakes, I = isort
+select = ["E", "W", "F", "I"]
+
+# Replaces your Flake8 ignore list
+ignore = [
+    "E501", # Line too long (handled automatically by the formatter instead)
+    "E741", # Ambiguous variable name
+    "E262", # Inline comment should start with '# '
+]
+
+[tool.ruff.format]
+# Ruff's formatter is Black-compatible by default, so you don't need
+# the old `profile = "black"` from isort. It just works.
+quote-style = "double"
