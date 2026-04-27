@@ -177,7 +177,7 @@ class Circuit:
                 gate_name = op["gate"].upper()
                 gate_str = gate_name
                 if op["params"]:
-                    params_str = ",".join(str(round(p, 2)) for p in op["params"])
+                    params_str = ",".join(str(round(p, 2)) if isinstance(p, (int, float)) else str(p) for p in op["params"])
                     gate_str = f"{gate_name}({params_str})"
                 col_width = max(col_width, len(gate_str) + 4)
 
@@ -189,7 +189,7 @@ class Circuit:
                 gate_name = op["gate"].upper()
                 gate_str = gate_name
                 if op["params"]:
-                    params_str = ",".join(str(round(p, 2)) for p in op["params"])
+                    params_str = ",".join(str(round(p, 2)) if isinstance(p, (int, float)) else str(p) for p in op["params"])
                     gate_str = f"{gate_name}({params_str})"
 
                 targets = [t[1] for t in op["targets"] if t[1] is not None]
