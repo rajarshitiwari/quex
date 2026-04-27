@@ -22,4 +22,5 @@ dev = [
     "networkx>=3.4.2",
     "pytest>=9.0.3",
     "qiskit>=2.4.1",
+    "ruff>=0.15.12",
 ]
