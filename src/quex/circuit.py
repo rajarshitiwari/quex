@@ -11,7 +11,7 @@ class Circuit:
     The internal, backend-agnostic representation of a quantum circuit in Quex.
     """
 
-    def __init__(self, num_qubits: int):
+    def __init__(self, num_qubits: int, wire_labels: Optional[List[str]] = None):
         """
         The simplest state: Initialize a blank circuit with N qubits.
         """
@@ -19,6 +19,12 @@ class Circuit:
 
         # The flat list of operations (Gate Name, Params, Targets)
         self.operations: List[Dict[str, Any]] = []
+
+        # If  no labels provided, default to q[0]..q[n] ...
+        if wire_labels is None:
+            self.wire_labels = [f"q[{i}]" for i in range(self.num_qubits)]
+        else:
+            self.wire_labels = wire_labels
 
         # The dependency graph (DAG) for execution routing
         self.dag = nx.DiGraph()
@@ -55,94 +61,161 @@ class Circuit:
 
     @classmethod
     def from_qasm(cls, qasm_string: str) -> "Circuit":
-        """
-        Builds a Quex Circuit directly from an OpenQASM 3 string.
-        """
-        # 1. Use the parser to get the intermediate representation
-        parsed_ops = parse_qasm_string(qasm_string)
+        """Builds a Quex Circuit directly from an OpenQASM 3 string."""
+        parsed_data = parse_qasm_string(qasm_string)
+        registers = parsed_data["registers"]
+        parsed_ops = parsed_data["operations"]
 
-        # 2. Determine total qubits dynamically
-        max_qubit_index = -1
+        # 1. Build the Virtual-to-Physical Map
+        # If registers = {'q': 3, 'qq': 2}, mapping becomes {'q': 0, 'qq': 3}
+        reg_starting_wire = {}
+        wire_labels = []  # Store the exact labels
+        current_wire = 0
+
+        for reg_name, size in registers.items():
+            reg_starting_wire[reg_name] = current_wire
+            for i in range(size):
+                wire_labels.append(f"{reg_name}[{i}]")
+            current_wire += size
+
+        total_qubits = current_wire
+        # Now pass the labels into the Circuit!
+        circuit = cls(num_qubits=total_qubits, wire_labels=wire_labels)
+
+        # 2. Translate the operations to use flat physical wires
         for op in parsed_ops:
-            for target in op["targets"]:
-                if target[1] is not None and target[1] > max_qubit_index:
-                    max_qubit_index = target[1]
+            flat_targets = []
+            for reg_name, reg_idx in op["targets"]:
+                # The math: Starting wire + offset index
+                physical_wire = reg_starting_wire[reg_name] + reg_idx
 
-        num_qubits = max_qubit_index + 1 if max_qubit_index >= 0 else 0
+                # We save it as ("q", physical_wire) so our visualizer doesn't break!
+                flat_targets.append(("q", physical_wire))
 
-        # 3. Construct and populate
-        circuit = cls(num_qubits=num_qubits)
-        for op in parsed_ops:
-            circuit.add_operation(gate=op["gate"], targets=op["targets"], params=op["params"])
+            circuit.add_operation(gate=op["gate"], targets=flat_targets, params=op["params"])
 
         return circuit
 
-    def to_text_diagram(self) -> str:
+    def get_layers(self) -> list:
         """
-        Generates a native, zero-dependency ASCII/Unicode representation
-        of the quantum circuit.
+        Organizes the flat list of operations into parallel execution layers (moments).
+        This determines the true 'depth' of the circuit and enables parallel batched execution.
         """
-        if self.num_qubits == 0:
-            return "Empty Circuit"
-
-        wires = [f"q[{i}]: ──" for i in range(self.num_qubits)]
+        wire_depths = {i: 0 for i in range(self.num_qubits)}
+        layers = []
 
         for op in self.operations:
-            gate_name = op["gate"].upper()
-
-            # IMPROVEMENT 1: Format parameterized gates to 2 decimal places
-            if op["params"]:
-                params_str = ",".join(str(round(p, 2)) for p in op["params"])
-                gate_str = f"{gate_name}({params_str})"
-            else:
-                gate_str = gate_name
-
             targets = [t[1] for t in op["targets"] if t[1] is not None]
             if not targets:
                 continue
 
-            col_width = len(gate_str) + 4
+            # A multi-qubit gate blocks all wires between its top and bottom targets
+            top, bottom = min(targets), max(targets)
+            blocked_wires = range(top, bottom + 1)
 
-            if len(targets) == 1:
-                t = targets[0]
-                for i in range(self.num_qubits):
-                    if i == t:
-                        wires[i] += f"[{gate_str}]".center(col_width, "─")
-                    else:
-                        wires[i] += "─" * col_width
+            # Find the deepest wire this gate touches
+            op_depth = max(wire_depths[w] for w in blocked_wires)
 
-            elif len(targets) == 2:
-                ctrl, tgt = targets[0], targets[1]
-                top, bottom = min(ctrl, tgt), max(ctrl, tgt)
+            # Create a new layer if needed
+            while len(layers) <= op_depth:
+                layers.append([])
 
-                for i in range(self.num_qubits):
-                    if i == ctrl:
-                        wires[i] += "■".center(col_width, "─")
-                    elif i == tgt:
-                        symbol = "X" if gate_name == "CX" else f"[{gate_str}]"
-                        wires[i] += symbol.center(col_width, "─")
-                    elif top < i < bottom:
-                        wires[i] += "│".center(col_width, "─")
-                    else:
-                        wires[i] += "─" * col_width
+            layers[op_depth].append(op)
 
-            # IMPROVEMENT 2: Handle 3-qubit gates (like CCX / Toffoli)
-            elif len(targets) == 3:
-                ctrl1, ctrl2, tgt = targets[0], targets[1], targets[2]
-                top, bottom = min(targets), max(targets)
+            # Update the depth tracker for all blocked wires
+            for w in blocked_wires:
+                wire_depths[w] = op_depth + 1
 
-                for i in range(self.num_qubits):
-                    if i in (ctrl1, ctrl2):
-                        wires[i] += "■".center(col_width, "─")
-                    elif i == tgt:
-                        symbol = "X" if gate_name in ["CCX", "TOFFOLI"] else f"[{gate_str}]"
-                        wires[i] += symbol.center(col_width, "─")
-                    elif top < i < bottom:
-                        wires[i] += "│".center(col_width, "─")
-                    else:
-                        wires[i] += "─" * col_width
+        return layers
 
-        return "\n".join(wires)
+    def depth(self) -> int:
+        """Returns the critical path depth of the circuit."""
+        return len(self.get_layers())
+
+    def to_text_diagram(self) -> str:
+        """
+        Generates a native ASCII/Unicode representation of the quantum circuit,
+        visually compressing parallel operations into aligned vertical columns.
+        """
+        if self.num_qubits == 0:
+            return "Empty Circuit"
+
+        # get the optimised layers of operation
+        layers = self.get_layers()
+
+        # --- 2. SETUP WIRES ---
+        max_label_len = max(len(label) for label in self.wire_labels)
+        wires = [f"{self.wire_labels[i].rjust(max_label_len)}: ──" for i in range(self.num_qubits)]
+        prefix_len = max_label_len + 4
+        spacers = [" " * prefix_len for _ in range(self.num_qubits - 1)]
+
+        # --- 3. DRAW COLUMN BY COLUMN ---
+        for layer in layers:
+            # Find the widest gate in THIS specific layer for alignment
+            col_width = 4
+            for op in layer:
+                gate_name = op["gate"].upper()
+                gate_str = gate_name
+                if op["params"]:
+                    params_str = ",".join(str(round(p, 2)) for p in op["params"])
+                    gate_str = f"{gate_name}({params_str})"
+                col_width = max(col_width, len(gate_str) + 4)
+
+            # Blank slates for this specific column
+            wire_chars = ["─" * col_width for _ in range(self.num_qubits)]
+            spacer_chars = [" " * col_width for _ in range(self.num_qubits - 1)]
+
+            for op in layer:
+                gate_name = op["gate"].upper()
+                gate_str = gate_name
+                if op["params"]:
+                    params_str = ",".join(str(round(p, 2)) for p in op["params"])
+                    gate_str = f"{gate_name}({params_str})"
+
+                targets = [t[1] for t in op["targets"] if t[1] is not None]
+
+                if len(targets) == 1:
+                    t = targets[0]
+                    wire_chars[t] = f"[{gate_str}]".center(col_width, "─")
+
+                elif len(targets) >= 2:
+                    tgt = targets[-1]
+                    controls = targets[:-1]
+                    top, bottom = min(targets), max(targets)
+
+                    for i in range(top, bottom + 1):
+                        if i in controls:
+                            symbol = "X" if gate_name == "SWAP" else "■"
+                            wire_chars[i] = symbol.center(col_width, "─")
+                        elif i == tgt:
+                            if gate_name in ["CX", "CCX", "TOFFOLI", "SWAP"]:
+                                symbol = "X"
+                            elif gate_name in ["CZ", "CCZ"]:
+                                symbol = "■"
+                            else:
+                                symbol = f"[{gate_str}]"
+                            wire_chars[i] = symbol.center(col_width, "─")
+                        else:
+                            wire_chars[i] = "│".center(col_width, "─")
+
+                    # Fill the spacers with pipes between the bounds
+                    for i in range(top, bottom):
+                        spacer_chars[i] = "│".center(col_width, " ")
+
+            # Append the rendered column to the main drawing
+            for i in range(self.num_qubits):
+                wires[i] += wire_chars[i]
+                if i < self.num_qubits - 1:
+                    spacers[i] += spacer_chars[i]
+
+        # --- 4. INTERLEAVE AND RETURN ---
+        output = []
+        for i in range(self.num_qubits):
+            output.append(wires[i])
+            if i < self.num_qubits - 1:
+                output.append(spacers[i])
+
+        return "\n".join(output)
 
     def __repr__(self) -> str:
         """Allows the circuit to draw itself automatically in standard REPLs."""
