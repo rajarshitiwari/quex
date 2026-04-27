@@ -54,3 +54,36 @@ def draw_dag(parsed_operations):
 
     plt.title("Quex Internal Circuit DAG")
     plt.show()
+
+
+def draw_structured_dag(dag):
+    """Draws a NetworkX DAG organized left-to-right by time/depth."""
+    plt.figure(figsize=(12, 6))  # Make it wider for timeline flow
+
+    # 1. Group nodes into "generations" (layers of time)
+    for layer, nodes in enumerate(nx.topological_generations(dag)):
+        for node in nodes:
+            dag.nodes[node]["layer"] = layer
+
+    # 2. Use the multipartite layout to force left-to-right drawing
+    pos = nx.multipartite_layout(dag, subset_key="layer", align="horizontal")
+
+    # 3. Draw with smaller nodes and cleaner styling
+    nx.draw(
+        dag,
+        pos,
+        with_labels=True,
+        node_color="#e0f2fe",  # Light modern blue
+        edge_color="gray",
+        node_size=800,
+        font_size=8,
+        arrows=True,
+    )
+
+    # Only draw edge labels (qubit wires) if it's not too cluttered
+    if len(dag.nodes) < 50:
+        edge_labels = nx.get_edge_attributes(dag, "label")
+        nx.draw_networkx_edge_labels(dag, pos, edge_labels=edge_labels, font_size=7, font_color="red")
+
+    plt.title("Quex Execution DAG (Time Flow ->)")
+    plt.show()
