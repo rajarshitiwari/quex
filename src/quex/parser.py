@@ -39,14 +39,10 @@ def parse_qasm_string(qasm_string: str) -> List[Dict[str, Any]]:
             params = []
             if statement.arguments:
                 for arg in statement.arguments:
-                    if hasattr(arg, 'value'):
+                    if hasattr(arg, "value"):
                         # Catches both ast.RealLiteral and ast.IntegerLiteral
                         params.append(arg.value)
 
-            circuit_ops.append({
-                "gate": gate_name,
-                "params": params,
-                "targets": target_qubits
-            })
+            circuit_ops.append({"gate": gate_name, "params": params, "targets": target_qubits})
 
     return circuit_ops

@@ -32,20 +32,16 @@ def random_qasm(num_qubits: int = 3, depth: int = 3) -> str:
         A random quantum circuit in OpenQASM 3 format.
     """
 
-    lines = [
-        "OPENQASM 3.0;",
-        'include "stdgates.inc";',
-        f"qubit[{num_qubits}] q;"
-    ]
+    lines = ["OPENQASM 3.0;", 'include "stdgates.inc";', f"qubit[{num_qubits}] q;"]
 
-    single_qubit_gates = ['h', 'x', 'rx', 'rz']
+    single_qubit_gates = ["h", "x", "rx", "rz"]
 
     for _ in range(depth):
         gate = random.choice(single_qubit_gates)
         target = random.randint(0, num_qubits - 1)
 
         # Handle parameterized gates
-        if gate in ['rx', 'rz']:
+        if gate in ["rx", "rz"]:
             angle = round(random.uniform(0.0, 3.14159), 4)
             lines.append(f"{gate}({angle}) q[{target}];")
         else:
@@ -81,15 +77,13 @@ def random_qiskit(num_qubits: int = 3, depth: int = 3) -> str:
         from qiskit import qasm3
         from qiskit.circuit.random import random_circuit
     except ImportError:
-        raise ImportError(
-            "Qiskit is not installed. To use this function, "
-            "install dev dependencies: `uv add --dev qiskit`"
-        )
+        raise ImportError("Qiskit is not installed. To use this function, install dev dependencies: `uv add --dev qiskit`")
 
     qc = random_circuit(num_qubits=4, depth=5, measure=False)
     # Export directly to an OpenQASM 3 string
     qasm_string = qasm3.dumps(qc)
     return qasm_string
+
 
 # Example usage:
 if __name__ == "__main__":

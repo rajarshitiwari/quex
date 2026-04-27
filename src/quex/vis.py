@@ -7,6 +7,7 @@ to visualize circuits and other
 relevant objects.
 
 """
+
 import matplotlib.pyplot as plt
 import networkx as nx
 
@@ -24,8 +25,8 @@ def draw_dag(parsed_operations):
 
     # 2. Build the Graph
     for i, op in enumerate(parsed_operations):
-        gate_name = op['gate'].upper()
-        targets = op['targets']
+        gate_name = op["gate"].upper()
+        targets = op["targets"]
 
         # Create a unique node ID (e.g., "0: H", "1: CX")
         node_id = f"{i}: {gate_name}"
@@ -45,19 +46,11 @@ def draw_dag(parsed_operations):
     # Use a topological layout so time flows from left to right (or top to bottom)
     pos = nx.spring_layout(dag, seed=42)
 
-    nx.draw(
-        dag, pos,
-        with_labels=True,
-        node_color="lightblue",
-        node_size=2000,
-        font_size=10,
-        font_weight="bold",
-        arrows=True
-    )
+    nx.draw(dag, pos, with_labels=True, node_color="lightblue", node_size=2000, font_size=10, font_weight="bold", arrows=True)
 
     # Add the edge labels (showing which qubit connects the gates)
-    edge_labels = nx.get_edge_attributes(dag, 'label')
-    nx.draw_networkx_edge_labels(dag, pos, edge_labels=edge_labels, font_color='red')
+    edge_labels = nx.get_edge_attributes(dag, "label")
+    nx.draw_networkx_edge_labels(dag, pos, edge_labels=edge_labels, font_color="red")
 
     plt.title("Quex Internal Circuit DAG")
     plt.show()
