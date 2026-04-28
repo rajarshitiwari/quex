@@ -1,7 +1,8 @@
-import quex as qx
+import time
+
 import numpy as np
 
-import time
+import quex as qx
 
 sample_circuit = """OPENQASM 3.0;
 qubit[2] q;
@@ -9,8 +10,7 @@ h q[0];
 cx q[0], q[1];
 """
 
-print("Below is an openqasm circuit:\n" + 
-      3 * "-" + f"\n{sample_circuit}" + 3 * "-")
+print("Below is an openqasm circuit:\n" + 3 * "-" + f"\n{sample_circuit}" + 3 * "-")
 
 print("This is circuit object from openqasm")
 qc = qx.Circuit.from_qasm(sample_circuit)
@@ -41,7 +41,6 @@ for i, d in enumerate(qc.layers):
     print(f"Depth: {i}, Operations: {d}")
 
 
-
 tic = time.time()
 # 1. Build a random circuit
 qasm_str = qx.random_qasm(3, 12)
@@ -65,7 +64,7 @@ toc = time.time()
 print("Final State Vector:")
 for i, amp in enumerate(state_vector):
     # Convert integer 'i' to binary string to represent the qubit state (e.g., 0 -> '00')
-    state_label = format(i, f'0{qc.num_qubits}b')
+    state_label = format(i, f"0{qc.num_qubits}b")
     print(f"|{state_label}>: Amplitude = {amp.real:18.10f} + {amp.imag:18.10f}i  | Prob = {probabilities[i]:18.10%}")
 
 print(f"Time in Numpy simulator: {toc - tic}")
@@ -92,17 +91,17 @@ probabilities = np.abs(state_vector) ** 2
 max_index = np.argmax(probabilities)
 toc = time.time()
 
-result_state = format(max_index, f'0{qc.num_qubits}b')
+result_state = format(max_index, f"0{qc.num_qubits}b")
 print(f"Most probable state: |{result_state}>")
 print(f"Time in Numpy simulator: {toc - tic}")
 
 
 # Build the circuit
 qc = qx.Circuit(num_qubits=2)
-qc.add_operation('h', 0)
-qc.add_operation('rx', 0, params=["t0"]) # Use a string!
-qc.add_operation('cx', [0, 1])
-qc.add_operation('ry', 1, params=["t1"]) # Use a string!
+qc.add_operation("h", 0)
+qc.add_operation("rx", 0, params=["t0"])  # Use a string!
+qc.add_operation("cx", [0, 1])
+qc.add_operation("ry", 1, params=["t1"])  # Use a string!
 
 print("Static Circuit Template:")
 print(qc)
@@ -115,11 +114,8 @@ iterations = 1000
 
 for i in range(iterations):
     # The optimizer generates new angles...
-    new_angles = {
-        "t0": 0.5 + (i * 0.001),
-        "t1": 1.2 - (i * 0.001)
-    }
-    
+    new_angles = {"t0": 0.5 + (i * 0.001), "t1": 1.2 - (i * 0.001)}
+
     # Execute instantly by passing the dictionary directly to the backend
     state = sim.run(qc, parameter_binds=new_angles)
 

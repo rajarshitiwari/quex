@@ -101,7 +101,7 @@ class Circuit:
         """
         # Create a fresh circuit with the exact same geometry
         new_qc = self.__class__(num_qubits=self.num_qubits, wire_labels=self.wire_labels)
-        
+
         for op in self.operations:
             new_params = []
             if op["params"]:
@@ -114,11 +114,7 @@ class Circuit:
                         new_params.append(p)
 
             # Safely add the operation to the new circuit
-            new_qc.add_operation(
-                gate=op["gate"], 
-                targets=op["targets"], 
-                params=new_params
-            )        
+            new_qc.add_operation(gate=op["gate"], targets=op["targets"], params=new_params)
         return new_qc
 
     def _build_layers(self) -> list:
@@ -288,11 +284,7 @@ class Circuit:
         Generates a strictly valid OpenQASM 3.0 string representation of the circuit.
         """
         # Standard OpenQASM 3 headers
-        lines = [
-            "OPENQASM 3.0;",
-            'include "stdgates.inc";',
-            ""
-        ]
+        lines = ["OPENQASM 3.0;", 'include "stdgates.inc";', ""]
 
         # 1. Reconstruct Register Declarations from wire_labels
         # Scans labels like 'q[0]', 'q[1]', 'qq[0]' to build {'q': 2, 'qq': 1}
@@ -305,7 +297,7 @@ class Circuit:
                 registers[reg_name] = max(registers.get(reg_name, 0), idx + 1)
             else:
                 # Fallback if a user provided a custom label without brackets
-                registers[label] = 1 
+                registers[label] = 1
 
         for reg_name, size in registers.items():
             if size > 1:
@@ -326,7 +318,7 @@ class Circuit:
         # 2. Reconstruct Operations sequentially
         for op in self.operations:
             gate = op["gate"]
-            
+
             # Format parameters (Seamlessly handles both floats and Late-Bound Strings!)
             if op["params"]:
                 params_str = ", ".join(str(p) for p in op["params"])

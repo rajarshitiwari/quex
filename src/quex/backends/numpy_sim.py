@@ -6,7 +6,9 @@ Module for the numpy simulator backend.
 """
 
 import numpy as np
+
 from quex.gates import STATIC_GATES
+
 
 class NumpySimulator:
     """
@@ -19,54 +21,42 @@ class NumpySimulator:
 
     def _get_gate_tensor(self, name: str, params: list, num_targets: int) -> np.ndarray:
         """Fetches the matrix from the central registry and reshapes it for tensor contraction."""
-        
+
         # 1. Handle Static Gates (X, H, CX, CZ, etc.)
         if name in STATIC_GATES:
             # STATIC_GATES format: (num_qubits, num_params, numpy_matrix)
-            matrix = STATIC_GATES[name][2] 
+            matrix = STATIC_GATES[name][2]
             return matrix.reshape((2,) * (2 * num_targets))
-            
+
         # 2. Handle Parameterized Gates dynamically
         elif name == "rx":
             theta = params[0]
-            matrix = np.array([
-                [np.cos(theta / 2), -1j * np.sin(theta / 2)],
-                [-1j * np.sin(theta / 2), np.cos(theta / 2)]
-            ], dtype=np.complex128)
+            matrix = np.array([[np.cos(theta / 2), -1j * np.sin(theta / 2)], [-1j * np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
             return matrix.reshape((2, 2))
-            
+
         elif name == "ry":
             theta = params[0]
-            matrix = np.array([
-                [np.cos(theta / 2), -np.sin(theta / 2)],
-                [np.sin(theta / 2), np.cos(theta / 2)]
-            ], dtype=np.complex128)
+            matrix = np.array([[np.cos(theta / 2), -np.sin(theta / 2)], [np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
             return matrix.reshape((2, 2))
-            
+
         elif name == "rz":
             theta = params[0]
-            matrix = np.array([
-                [np.exp(-1j * theta / 2), 0],
-                [0, np.exp(1j * theta / 2)]
-            ], dtype=np.complex128)
+            matrix = np.array([[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=np.complex128)
             return matrix.reshape((2, 2))
 
         elif name == "p":
             lam = params[0]
-            matrix = np.array([
-                [1, 0],
-                [0, np.exp(1j * lam)]
-            ], dtype=np.complex128)
+            matrix = np.array([[1, 0], [0, np.exp(1j * lam)]], dtype=np.complex128)
             return matrix.reshape((2, 2))
-            
+
         elif name == "u":
             theta, phi, lam = params
-            matrix = np.array([
-                [np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)],
-                [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)]
-            ], dtype=np.complex128)
+            matrix = np.array(
+                [[np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)], [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)]],
+                dtype=np.complex128,
+            )
             return matrix.reshape((2, 2))
-            
+
         else:
             raise ValueError(f"Gate '{name}' is not supported by NumpySimulator.")
 
