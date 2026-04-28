@@ -11,10 +11,10 @@ import importlib.metadata
 from quex.backends.numpy_sim import NumpySimulator
 from quex.circuit import Circuit
 from quex.parser import parse_qasm_string
-from quex.qrandom import random_qasm, random_qiskit
+from quex.qrandom import random_qasm, random_qiskit, random_ansatz
 from quex.vis import draw_dag, draw_qiskit, draw_structured_dag
 
 __version__ = importlib.metadata.version("quex")
 version = __version__
 
-__all__ = ["Circuit", "draw_dag", "draw_qiskit", "draw_structured_dag", "NumpySimulator", "parse_qasm_string", "random_qasm", "random_qiskit", "version"]
+__all__ = ["Circuit", "draw_dag", "draw_qiskit", "draw_structured_dag", "NumpySimulator", "parse_qasm_string", "random_ansatz", "random_qasm", "random_qiskit", "version"]

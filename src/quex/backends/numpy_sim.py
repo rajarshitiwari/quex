@@ -6,7 +6,7 @@ Module for the numpy simulator backend.
 """
 
 import numpy as np
-
+from quex.gates import STATIC_GATES
 
 class NumpySimulator:
     """
@@ -14,47 +14,61 @@ class NumpySimulator:
     """
 
     def __init__(self):
-        # Build the 8x8 Toffoli matrix and reshape it to (2,2,2,2,2,2)
-        ccx_mat = np.eye(8, dtype=np.complex128)
-        # In a Toffoli, if controls are |11> (binary 110=6, 111=7), apply X to the target
-        ccx_mat[6, 6] = 0
-        ccx_mat[7, 7] = 0
-        ccx_mat[6, 7] = 1
-        ccx_mat[7, 6] = 1
-
-        self._static_gates = {
-            # 1-Qubit Gates
-            "x": np.array([[0, 1], [1, 0]], dtype=np.complex128),
-            "y": np.array([[0, -1j], [1j, 0]], dtype=np.complex128),
-            "z": np.array([[1, 0], [0, -1]], dtype=np.complex128),
-            "h": np.array([[1, 1], [1, -1]], dtype=np.complex128) / np.sqrt(2),
-            # 2-Qubit gates must be reshaped into (2, 2, 2, 2) tensors
-            # [output_q0, output_q1, input_q0, input_q1]
-            "cx": np.array([[1, 0, 0, 0], [0, 1, 0, 0], [0, 0, 0, 1], [0, 0, 1, 0]], dtype=np.complex128).reshape(2, 2, 2, 2),
-            # 3-Qubit Gates (reshaped to 2, 2, 2, 2, 2, 2)
-            "ccx": ccx_mat.reshape(2, 2, 2, 2, 2, 2),
-            "toffoli": ccx_mat.reshape(2, 2, 2, 2, 2, 2),  # Alias for ccx
-        }
+        # Look how clean this is now! No more hardcoded dictionaries.
+        pass
 
     def _get_gate_tensor(self, name: str, params: list, num_targets: int) -> np.ndarray:
-        """Retrieves or calculates the gate matrix and reshapes it for tensor math."""
-        if name in self._static_gates:
-            return self._static_gates[name]
-
-        # Dynamically build parameterized rotation gates
-        if name == "rx":
+        """Fetches the matrix from the central registry and reshapes it for tensor contraction."""
+        
+        # 1. Handle Static Gates (X, H, CX, CZ, etc.)
+        if name in STATIC_GATES:
+            # STATIC_GATES format: (num_qubits, num_params, numpy_matrix)
+            matrix = STATIC_GATES[name][2] 
+            return matrix.reshape((2,) * (2 * num_targets))
+            
+        # 2. Handle Parameterized Gates dynamically
+        elif name == "rx":
             theta = params[0]
-            return np.array([[np.cos(theta / 2), -1j * np.sin(theta / 2)], [-1j * np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
-
+            matrix = np.array([
+                [np.cos(theta / 2), -1j * np.sin(theta / 2)],
+                [-1j * np.sin(theta / 2), np.cos(theta / 2)]
+            ], dtype=np.complex128)
+            return matrix.reshape((2, 2))
+            
         elif name == "ry":
             theta = params[0]
-            return np.array([[np.cos(theta / 2), -np.sin(theta / 2)], [np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
-
+            matrix = np.array([
+                [np.cos(theta / 2), -np.sin(theta / 2)],
+                [np.sin(theta / 2), np.cos(theta / 2)]
+            ], dtype=np.complex128)
+            return matrix.reshape((2, 2))
+            
         elif name == "rz":
             theta = params[0]
-            return np.array([[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=np.complex128)
+            matrix = np.array([
+                [np.exp(-1j * theta / 2), 0],
+                [0, np.exp(1j * theta / 2)]
+            ], dtype=np.complex128)
+            return matrix.reshape((2, 2))
 
-        raise NotImplementedError(f"Gate '{name}' is not yet supported by NumpySimulator.")
+        elif name == "p":
+            lam = params[0]
+            matrix = np.array([
+                [1, 0],
+                [0, np.exp(1j * lam)]
+            ], dtype=np.complex128)
+            return matrix.reshape((2, 2))
+            
+        elif name == "u":
+            theta, phi, lam = params
+            matrix = np.array([
+                [np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)],
+                [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)]
+            ], dtype=np.complex128)
+            return matrix.reshape((2, 2))
+            
+        else:
+            raise ValueError(f"Gate '{name}' is not supported by NumpySimulator.")
 
     def run(self, circuit, parameter_binds: dict = None) -> np.ndarray:
         """

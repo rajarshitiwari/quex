@@ -18,7 +18,7 @@ import random
 from quex.circuit import Circuit
 
 
-def generate_random_ansatz(num_qubits: int, depth: int) -> Circuit:
+def random_ansatz(num_qubits: int, depth: int) -> Circuit:
     """
     Generates a 'Hardware-Efficient Ansatz' circuit.
     This consists of alternating layers of random rotations and linear entanglement.
