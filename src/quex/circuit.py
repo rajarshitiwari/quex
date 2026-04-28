@@ -83,6 +83,44 @@ class Circuit:
         """
         return len(self.layers)
 
+    @property
+    def free_parameters(self) -> list:
+        """Returns a sorted list of all unbound parameter names (strings) in the circuit."""
+        params = set()
+        for op in self.operations:
+            if op["params"]:
+                for p in op["params"]:
+                    if isinstance(p, str):
+                        params.add(p)
+        return sorted(list(params))
+
+    def bind_parameters(self, binds: dict) -> "Circuit":
+        """
+        Returns a NEW Circuit instance with the specified parameters bound.
+        Supports partial binding (leaving some parameters as strings).
+        """
+        # Create a fresh circuit with the exact same geometry
+        new_qc = self.__class__(num_qubits=self.num_qubits, wire_labels=self.wire_labels)
+        
+        for op in self.operations:
+            new_params = []
+            if op["params"]:
+                for p in op["params"]:
+                    # If it is a variable AND the user provided a value for it, swap it!
+                    if isinstance(p, str) and p in binds:
+                        new_params.append(float(binds[p]))
+                    else:
+                        # Keep it as is (either already a float, or a still-unbound string)
+                        new_params.append(p)
+
+            # Safely add the operation to the new circuit
+            new_qc.add_operation(
+                gate=op["gate"], 
+                targets=op["targets"], 
+                params=new_params
+            )        
+        return new_qc
+
     def _build_layers(self) -> list:
         """
         Organizes the flat list of operations into parallel execution layers (moments).
@@ -244,3 +282,62 @@ class Circuit:
     def __str__(self) -> str:
         """Allows `print(circuit)` to output the text diagram."""
         return self.to_text_diagram()
+
+    def to_qasm(self) -> str:
+        """
+        Generates a strictly valid OpenQASM 3.0 string representation of the circuit.
+        """
+        # Standard OpenQASM 3 headers
+        lines = [
+            "OPENQASM 3.0;",
+            'include "stdgates.inc";',
+            ""
+        ]
+
+        # 1. Reconstruct Register Declarations from wire_labels
+        # Scans labels like 'q[0]', 'q[1]', 'qq[0]' to build {'q': 2, 'qq': 1}
+        registers = {}
+        for label in self.wire_labels:
+            if "[" in label and label.endswith("]"):
+                reg_name, idx_str = label.split("[")
+                idx = int(idx_str[:-1])
+                # Track the maximum index to determine the register size
+                registers[reg_name] = max(registers.get(reg_name, 0), idx + 1)
+            else:
+                # Fallback if a user provided a custom label without brackets
+                registers[label] = 1 
+
+        for reg_name, size in registers.items():
+            if size > 1:
+                lines.append(f"qubit[{size}] {reg_name};")
+            else:
+                lines.append(f"qubit {reg_name};")
+
+        # --- NEW: Declare Free Parameters for Strict OpenQASM 3.0 Validity ---
+        free_params = self.free_parameters
+        if free_params:
+            lines.append("")
+            for param in free_params:
+                lines.append(f"input angle {param};")
+        # ---------------------------------------------------------------------
+
+        lines.append("")
+
+        # 2. Reconstruct Operations sequentially
+        for op in self.operations:
+            gate = op["gate"]
+            
+            # Format parameters (Seamlessly handles both floats and Late-Bound Strings!)
+            if op["params"]:
+                params_str = ", ".join(str(p) for p in op["params"])
+                gate_part = f"{gate}({params_str})"
+            else:
+                gate_part = gate
+
+            # Map the physical indices back to their exact string labels (e.g., 'qq[0]')
+            target_labels = [self.wire_labels[t[1]] for t in op["targets"] if t[1] is not None]
+            targets_str = ", ".join(target_labels)
+
+            lines.append(f"{gate_part} {targets_str};")
+
+        return "\n".join(lines)

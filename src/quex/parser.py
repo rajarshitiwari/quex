@@ -45,6 +45,8 @@ def parse_qasm_string(qasm_string: str) -> Dict[str, Any]:
                     if hasattr(arg, "value"):
                         # Catches both ast.RealLiteral and ast.IntegerLiteral
                         params.append(arg.value)
+                    elif hasattr(arg, "name"):  # Catch string variables (Identifiers)
+                        params.append(arg.name)
 
             circuit_ops.append({"gate": gate_name, "params": params, "targets": target_qubits})
 
