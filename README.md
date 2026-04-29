@@ -108,3 +108,6 @@ uv run your_script.py
 - [ ] Advanced Execution Engines (SciPy Sparse, cuQuantum integration)
 - [ ] LLVM-based QIR Ingestion
 
+# Contact
+
+Contact rajarshi.tiwari @ ichec.ie, or @rajarshitiwari for any questions.
