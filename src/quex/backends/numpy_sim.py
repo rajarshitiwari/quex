@@ -6,10 +6,67 @@ Module for the numpy simulator backend.
 """
 
 import numpy as np
-
 from quex.gates import STATIC_GATES
 
+# --- 1. Independent Matrix Generators ---
+def _gen_rx(params: list) -> np.ndarray:
+    theta = params[0]
+    return np.array([
+        [np.cos(theta / 2), -1j * np.sin(theta / 2)],
+        [-1j * np.sin(theta / 2), np.cos(theta / 2)]
+    ], dtype=np.complex128)
 
+def _gen_ry(params: list) -> np.ndarray:
+    theta = params[0]
+    return np.array([
+        [np.cos(theta / 2), -np.sin(theta / 2)],
+        [np.sin(theta / 2), np.cos(theta / 2)]
+    ], dtype=np.complex128)
+
+def _gen_rz(params: list) -> np.ndarray:
+    theta = params[0]
+    return np.array([
+        [np.exp(-1j * theta / 2), 0],
+        [0, np.exp(1j * theta / 2)]
+    ], dtype=np.complex128)
+
+def _gen_p(params: list) -> np.ndarray:
+    lam = params[0]
+    return np.array([
+        [1, 0],
+        [0, np.exp(1j * lam)]
+    ], dtype=np.complex128)
+
+def _gen_u(params: list) -> np.ndarray:
+    theta, phi, lam = params
+    return np.array([
+        [np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)],
+        [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)]
+    ], dtype=np.complex128)
+
+# --- 2. The O(1) Dispatch Table ---
+PARAM_GENERATORS = {
+    "rx": _gen_rx,
+    "ry": _gen_ry,
+    "rz": _gen_rz,
+    "p": _gen_p,
+    "u": _gen_u,
+}
+
+# --- 3. The Pure Module-Level Function ---
+def get_gate_tensor(name: str, params: list, num_targets: int) -> np.ndarray:
+    """Fetches or dynamically generates the requested gate matrix."""
+    if name in STATIC_GATES:
+        matrix = STATIC_GATES[name][2]
+        return matrix.reshape((2,) * (2 * num_targets))
+        
+    if name in PARAM_GENERATORS:
+        matrix = PARAM_GENERATORS[name](params)
+        return matrix.reshape((2, 2))
+        
+    raise ValueError(f"Gate '{name}' is not supported by NumpySimulator.")
+
+# --- 4. The Refined Class ---
 class NumpySimulator:
     """
     A high-performance, tensor-network style statevector simulator using NumPy.
@@ -18,47 +75,6 @@ class NumpySimulator:
     def __init__(self):
         # Look how clean this is now! No more hardcoded dictionaries.
         pass
-
-    def _get_gate_tensor(self, name: str, params: list, num_targets: int) -> np.ndarray:
-        """Fetches the matrix from the central registry and reshapes it for tensor contraction."""
-
-        # 1. Handle Static Gates (X, H, CX, CZ, etc.)
-        if name in STATIC_GATES:
-            # STATIC_GATES format: (num_qubits, num_params, numpy_matrix)
-            matrix = STATIC_GATES[name][2]
-            return matrix.reshape((2,) * (2 * num_targets))
-
-        # 2. Handle Parameterized Gates dynamically
-        elif name == "rx":
-            theta = params[0]
-            matrix = np.array([[np.cos(theta / 2), -1j * np.sin(theta / 2)], [-1j * np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
-            return matrix.reshape((2, 2))
-
-        elif name == "ry":
-            theta = params[0]
-            matrix = np.array([[np.cos(theta / 2), -np.sin(theta / 2)], [np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
-            return matrix.reshape((2, 2))
-
-        elif name == "rz":
-            theta = params[0]
-            matrix = np.array([[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=np.complex128)
-            return matrix.reshape((2, 2))
-
-        elif name == "p":
-            lam = params[0]
-            matrix = np.array([[1, 0], [0, np.exp(1j * lam)]], dtype=np.complex128)
-            return matrix.reshape((2, 2))
-
-        elif name == "u":
-            theta, phi, lam = params
-            matrix = np.array(
-                [[np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)], [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)]],
-                dtype=np.complex128,
-            )
-            return matrix.reshape((2, 2))
-
-        else:
-            raise ValueError(f"Gate '{name}' is not supported by NumpySimulator.")
 
     def run(self, circuit, parameter_binds: dict = None) -> np.ndarray:
         """
@@ -99,7 +115,8 @@ class NumpySimulator:
             targets = [t[1] for t in op["targets"] if t[1] is not None]
             k = len(targets)  # How many qubits this gate touches
 
-            gate_tensor = self._get_gate_tensor(gate_name, bound_params, k)
+            # Call the module-level function
+            gate_tensor = get_gate_tensor(gate_name, bound_params, k)
 
             # --- THE TENSOR CONTRACTION MAGIC ---
 
