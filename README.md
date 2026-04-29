@@ -84,8 +84,8 @@ uv run your_script.py
 ## 🗺️ Roadmap
 
 - [x] OpenQASM 3.0 Ingestion Layer
-- [ ] Internal Circuit Representation (DAG structure)
-- [ ] Baseline Classical Execution Engine (NumPy state-vector simulation)
+- [x] Internal Circuit Representation (DAG structure)
+- [x] Baseline Classical Execution Engine (NumPy state-vector simulation)
 - [ ] Hardware Dispatcher Logic
 - [ ] Advanced Execution Engines (SciPy Sparse, cuQuantum integration)
 - [ ] LLVM-based QIR Ingestion
