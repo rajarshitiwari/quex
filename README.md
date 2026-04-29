@@ -52,25 +52,43 @@ uv run pytest
 Currently, Quex features a highly efficient (hopefully) parsing layer for OpenQASM 3.0 strings. Here is how to ingest a standard quantum circuit:
 
 ```python
-from quex.parser import parse_qasm_string
+import quex as qx
 
-# A standard OpenQASM 3.0 string (e.g., a Bell State preparation)
-bell_state_circuit = """
+# Instantiate a circuit
+qc = qx.Circuit(num_qubits=2)
+
+# Add standard operations
+qc.add_operation('h', 0)
+qc.add_operation('cx', [0, 1])
+
+# Quex features a built-in topological visualizer
+print("Circuit Topology:")
+print(qc)
+
+# We read a raw OpenQASM string from an external file/source
+qasm_str = """
 OPENQASM 3.0;
 qubit[2] q;
 h q[0];
+rx(theta_0) q[1];
+ry(gamma_1) q[0];
 cx q[0], q[1];
 """
+# Parse it
+qc = qx.Circuit.from_qasm(qasm_str)
 
-# Ingest the circuit into Quex's internal representation
-operations = parse_qasm_string(bell_state_circuit)
+# Quex automatically found the variables and initialized them!
+print("Auto-populated Parameters:")
+print(qc.parameters) 
+# Output: {'theta_0': 0.0, 'gamma_1': 0.0}
 
-for op in operations:
-    print(op)
+# Now attach a simulator, and run it.
+qc.simulator = qx.NumpySimulator()
+baseline_state = qc.run()
 
-# Output:
-# {'gate': 'h', 'targets': [('q', 0)]}
-# {'gate': 'cx', 'targets': [('q', 0), ('q', 1)]}
+# The ML loop can just update the dictionary directly
+qc.parameters['theta_0'] = 1.57
+updated_state = qc.run()
 ```
 
 ### Running Scripts Locally
