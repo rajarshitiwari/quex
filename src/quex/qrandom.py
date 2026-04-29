@@ -13,10 +13,36 @@ Example
 
 """
 
+import math
 import random
-
 from quex.circuit import Circuit
 
+
+def random_ansatz_U(num_qubits: int, depth: int) -> Circuit:
+    """
+    Generates a Hardware-Efficient Ansatz using Haar-uniform random rotations.
+    """
+    qc = Circuit(num_qubits)
+    
+    for d in range(depth):
+        # 1. Layer of Uniformly Random Bloch Sphere Rotations
+        for i in range(num_qubits):
+            # Uniformly distributed phi and lambda
+            phi = random.uniform(0, 2 * math.pi)
+            lam = random.uniform(0, 2 * math.pi)
+            
+            # The arccos trick to prevent pole-bunching on the sphere
+            u = random.uniform(0, 1)
+            theta = math.acos(1 - 2 * u)
+            
+            qc.add_operation('u', i, params=[theta, phi, lam])
+            
+        # 2. Layer of Linear Entanglement
+        offset = d % 2  
+        for i in range(offset, num_qubits - 1, 2):
+            qc.add_operation('cx', [i, i + 1])
+            
+    return qc
 
 def random_ansatz(num_qubits: int, depth: int) -> Circuit:
     """
