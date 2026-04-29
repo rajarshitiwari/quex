@@ -1,0 +1,16 @@
+format: jb-book
+root: index
+parts:
+  - caption: Getting Started
+    chapters:
+      - file: installation  # Installation instructions
+  
+  - caption: Tutorials
+    chapters:
+      - file: tutorials/quickstart
+      - file: tutorials/random-circuit-generation
+      - file: tutorials/parameterised-circuits
+      - file: tutorials/simulation-examples
+  - caption: API Reference
+    chapters:
+      - file: autoapi/quex/index # This is where sphinx-autoapi dumps the docs
