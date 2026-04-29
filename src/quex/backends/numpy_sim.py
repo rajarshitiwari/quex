@@ -7,6 +7,7 @@ Module for the numpy simulator backend.
 
 import numpy as np
 from quex.gates import STATIC_GATES
+from quex.backends.base import Simulator
 
 # --- 1. Independent Matrix Generators ---
 def _gen_rx(params: list) -> np.ndarray:
@@ -66,25 +67,31 @@ def get_gate_tensor(name: str, params: list, num_targets: int) -> np.ndarray:
         
     raise ValueError(f"Gate '{name}' is not supported by NumpySimulator.")
 
+
 # --- 4. The Refined Class ---
-class NumpySimulator:
+class NumpySimulator(Simulator):
     """
     A high-performance, tensor-network style statevector simulator using NumPy.
     """
-
-    def __init__(self):
-        # Look how clean this is now! No more hardcoded dictionaries.
-        pass
-
-    def run(self, circuit, parameter_binds: dict = None) -> np.ndarray:
+    def run(self, circuit=None, parameter_binds: dict = None) -> np.ndarray:
         """
         Executes the circuit and returns the final N-dimensional state tensor.
         Accepts an optional dictionary of parameter bindings.
+        Allows passing a circuit directly, OR fallback to the attached circuit.
         """
-        if parameter_binds is None:
-            parameter_binds = {}
+        target_circuit = circuit or self.circuit
+        if target_circuit is None:
+            raise ValueError("No circuit provided to run, and no circuit attached to Simulator.")
+        
+        # --- NEW: Merge Circuit parameters with temporary binds ---
+        # 1. Grab the circuit's inherent parameters (acting as the baseline)
+        final_binds = getattr(target_circuit, 'parameters', {}).copy()
+        
+        # 2. If the user passed explicit binds to this run(), they overwrite the baseline
+        if parameter_binds:
+            final_binds.update(parameter_binds)
 
-        num_qubits = circuit.num_qubits
+        num_qubits = target_circuit.num_qubits
         if num_qubits == 0:
             return np.array([])
 
@@ -94,7 +101,7 @@ class NumpySimulator:
         state[(0,) * num_qubits] = 1.0
 
         # 2. Iterate through the topological operations
-        for op in circuit.operations:
+        for op in target_circuit.operations:
             gate_name = op["gate"]
 
             # --- Parameter Binding part ---
@@ -103,9 +110,9 @@ class NumpySimulator:
                 for p in op["params"]:
                     # If the parameter is a string (variable name), look it up in the dict
                     if isinstance(p, str):
-                        if p not in parameter_binds:
-                            raise ValueError(f"Unbound parameter: '{p}'. Please provide it in parameter_binds.")
-                        bound_params.append(float(parameter_binds[p]))
+                        if p not in final_binds:
+                            raise ValueError(f"Unbound parameter: '{p}'. Set it via qc.parameters or pass it to run().")
+                        bound_params.append(float(final_binds[p]))
                     else:
                         # It's already a number
                         bound_params.append(p)

@@ -1,8 +1,10 @@
 # src/quex/circuit.py
-from typing import Any, Dict, List, Optional, Union
+from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
 
 from quex.parser import parse_qasm_string
 
+if TYPE_CHECKING:
+    from quex.backends.base import Simulator
 
 class Circuit:
     """
@@ -17,16 +19,81 @@ class Circuit:
 
         # The flat list of operations (Gate Name, Params, Targets)
         self.operations: List[Dict[str, Any]] = []
+        self._layers: Optional[List[List[Dict[str, Any]]]] = None
 
+        # New: The Attached Simulator (Calculator equivalent)
+        self._simulator: Optional['Simulator'] = None
+
+        # New: a dictionary for parameters.
+        self.parameters: Dict[str, float] = {}
         # If  no labels provided, default to q[0]..q[n] ...
         if wire_labels is None:
-            self.wire_labels = [f"q[{i}]" for i in range(self.num_qubits)]
+            self.wire_labels = [f"q[{i}]" for i in range(num_qubits)]
         else:
             self.wire_labels = wire_labels
 
-        self._layers: Optional[List[List[Dict[str, Any]]]] = None
+    @property
+    def simulator(self):
+        return self._simulator
 
-    def add_operation(self, gate: str, targets: Union[int, List[int], List[tuple]], params: Optional[List[float]] = None):
+    @simulator.setter
+    def simulator(self, calc: 'Simulator'):
+        self._simulator = calc
+        # Symmetric Link: Tell the simulator that WE are its circuit now.
+        if calc is not None and calc.circuit is not self:
+            calc.circuit = self
+
+    def run(self, parameter_binds: dict = None):
+        """Delegates simulation to the attached Simulator."""
+        if self._simulator is None:
+            raise RuntimeError("No Simulator attached! Please assign a simulator first.")
+        return self._simulator.run(circuit=self, parameter_binds=parameter_binds)
+
+    def add_operation(self, gate: str, targets: Union[int, List[int], List[tuple]], params: Optional[List[Union[float, str]]] = None):
+        """
+        Programmatically add an operation to the circuit.
+        Friendly UX: 'targets' accepts a single int, a list of ints, or internal tuples.
+        Automatically registers any new string parameters in the circuit's state.
+        """
+        if params is None:
+            params = []
+
+        # --- NEW: Parameter Auto-Registration (ASE-style state tracking) ---
+        for p in params:
+            # If the parameter is a variable name (string) we haven't seen before,
+            # auto-populate it in the circuit's state with a safe 0.0 default.
+            if isinstance(p, str) and p not in self.parameters:
+                self.parameters[p] = 0.0
+        # -------------------------------------------------------------------
+
+        # --- Input Normalisation ---
+        normalised_targets = []
+
+        # Case 1: User passed a single integer -> qc.add_operation('x', 0)
+        if isinstance(targets, int):
+            normalised_targets.append(("q", targets))
+
+        # Case 2: User passed a list
+        elif isinstance(targets, list):
+            for t in targets:
+                if isinstance(t, int):
+                    # qc.add_operation('cx', [0, 1])
+                    normalised_targets.append(("q", t))
+                elif isinstance(t, tuple):
+                    # Internal parser format: qc.add_operation('x', [('q', 0)])
+                    normalised_targets.append(t)
+                else:
+                    raise ValueError(f"Target {t} must be an integer or tuple.")
+        else:
+            raise ValueError("Targets must be an int, list of ints, or list of tuples.")
+
+        op = {"gate": gate.lower(), "params": params, "targets": normalised_targets}
+        self.operations.append(op)
+
+        # --- if circuit changed, re-evaluate layers ---
+        self._layers = None
+
+    def add_operation1(self, gate: str, targets: Union[int, List[int], List[tuple]], params: Optional[List[float]] = None):
         """
         Programmatically add an operation to the circuit.
         Friendly UX: 'targets' accepts a single int, a list of ints, or internal tuples.

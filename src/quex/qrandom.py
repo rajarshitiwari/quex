@@ -67,6 +67,46 @@ def random_ansatz(num_qubits: int, depth: int) -> Circuit:
 
     return qc
 
+def random_ansatz_P(num_qubits: int, depth: int, parameterized: bool = True) -> Circuit:
+    """
+    Generates a Hardware-Efficient Ansatz.
+    If parameterized=True, it builds a template with string variables and 
+    saves the initial random angles into qc.parameters (Perfect for ML!).
+    """
+    qc = Circuit(num_qubits)
+    param_idx = 0
+    
+    for d in range(depth):
+        # 1. Layer of Uniformly Random Bloch Sphere Rotations
+        for i in range(num_qubits):
+            # Calculate the mathematically uniform random angles
+            phi_val = random.uniform(0, 2 * math.pi)
+            lam_val = random.uniform(0, 2 * math.pi)
+            u = random.uniform(0, 1)
+            theta_val = math.acos(1 - 2 * u)
+            
+            if parameterized:
+                # Create variable names: t_0, p_0, l_0
+                t_str, p_str, l_str = f"t_{param_idx}", f"p_{param_idx}", f"l_{param_idx}"
+                param_idx += 1
+                
+                # Add the operations as Strings (Late Binding)
+                qc.add_operation('u', i, params=[t_str, p_str, l_str])
+                
+                # Store the actual numbers in the circuit's state!
+                qc.parameters[t_str] = theta_val
+                qc.parameters[p_str] = phi_val
+                qc.parameters[l_str] = lam_val
+            else:
+                # Add the operations strictly as Floats (Static binding)
+                qc.add_operation('u', i, params=[theta_val, phi_val, lam_val])
+            
+        # 2. Layer of Linear Entanglement
+        offset = d % 2  
+        for i in range(offset, num_qubits - 1, 2):
+            qc.add_operation('cx', [i, i + 1])
+            
+    return qc
 
 def random_qasm(num_qubits: int = 3, depth: int = 3) -> str:
     """Generates a random OpenQASM 3 string with standard gates.

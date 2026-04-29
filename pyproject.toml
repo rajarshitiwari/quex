@@ -24,6 +24,16 @@ dev = [
     "qiskit>=2.4.1",
     "ruff>=0.15.12",
 ]
+docs = [
+    "ipykernel>=7.2.0",
+    "jupyter-book>=1.0.0,<2.0.0",
+    "jupyter-sphinx>=0.5.3",
+    "myst-nb>=1.4.0",
+    "sphinx-autoapi>=3.0.0",
+    "sphinx-copybutton>=0.5.2",
+    "sphinx-togglebutton>=0.4.5",
+    "sphinxcontrib-mermaid>=2.0.1",
+]
 
 [tool.ruff]
 # Replaces both Black's and Flake8's max-line-length
