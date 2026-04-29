@@ -5,11 +5,14 @@ Random Circuits
 
 Example
 -------
+
 .. jupyter-execute::
 
-    if __name__ == "__main__":
-        print(random_qasm(num_qubits=3, depth=5))
-        print(random_qiskit(num_qubits=3, depth=5))
+    import quex as qx
+    qc_static = qx.random_ansatz(num_qubits=6, depth=6)
+    print("Static Random Circuit:")
+    print(qc_static)
+    print(f"Compiler Operations Depth: {qc_static.depth}")
 
 """
 
@@ -175,9 +178,3 @@ def random_qiskit(num_qubits: int = 3, depth: int = 3) -> str:
     # Export directly to an OpenQASM 3 string
     qasm_string = qasm3.dumps(qc)
     return qasm_string
-
-
-# Example usage:
-if __name__ == "__main__":
-    print(random_qasm(num_qubits=3, depth=5))
-    print(random_qiskit(num_qubits=3, depth=5))
