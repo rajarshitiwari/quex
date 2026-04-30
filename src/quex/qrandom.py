@@ -18,6 +18,7 @@ Example
 
 import math
 import random
+
 from quex.circuit import Circuit
 
 

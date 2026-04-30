@@ -1,5 +1,5 @@
 # src/quex/circuit.py
-from typing import List, Dict, Any, Optional, Union, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 from quex.parser import parse_qasm_string
 

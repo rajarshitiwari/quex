@@ -6,8 +6,9 @@ Module for the numpy simulator backend.
 """
 
 import numpy as np
-from quex.gates import STATIC_GATES
+
 from quex.backends.base import Simulator
+from quex.gates import STATIC_GATES
 
 
 # --- 1. Independent Matrix Generators ---
