@@ -9,41 +9,34 @@ import numpy as np
 from quex.gates import STATIC_GATES
 from quex.backends.base import Simulator
 
+
 # --- 1. Independent Matrix Generators ---
 def _gen_rx(params: list) -> np.ndarray:
     theta = params[0]
-    return np.array([
-        [np.cos(theta / 2), -1j * np.sin(theta / 2)],
-        [-1j * np.sin(theta / 2), np.cos(theta / 2)]
-    ], dtype=np.complex128)
+    return np.array([[np.cos(theta / 2), -1j * np.sin(theta / 2)], [-1j * np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
+
 
 def _gen_ry(params: list) -> np.ndarray:
     theta = params[0]
-    return np.array([
-        [np.cos(theta / 2), -np.sin(theta / 2)],
-        [np.sin(theta / 2), np.cos(theta / 2)]
-    ], dtype=np.complex128)
+    return np.array([[np.cos(theta / 2), -np.sin(theta / 2)], [np.sin(theta / 2), np.cos(theta / 2)]], dtype=np.complex128)
+
 
 def _gen_rz(params: list) -> np.ndarray:
     theta = params[0]
-    return np.array([
-        [np.exp(-1j * theta / 2), 0],
-        [0, np.exp(1j * theta / 2)]
-    ], dtype=np.complex128)
+    return np.array([[np.exp(-1j * theta / 2), 0], [0, np.exp(1j * theta / 2)]], dtype=np.complex128)
+
 
 def _gen_p(params: list) -> np.ndarray:
     lam = params[0]
-    return np.array([
-        [1, 0],
-        [0, np.exp(1j * lam)]
-    ], dtype=np.complex128)
+    return np.array([[1, 0], [0, np.exp(1j * lam)]], dtype=np.complex128)
+
 
 def _gen_u(params: list) -> np.ndarray:
     theta, phi, lam = params
-    return np.array([
-        [np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)],
-        [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)]
-    ], dtype=np.complex128)
+    return np.array(
+        [[np.cos(theta / 2), -np.exp(1j * lam) * np.sin(theta / 2)], [np.exp(1j * phi) * np.sin(theta / 2), np.exp(1j * (phi + lam)) * np.cos(theta / 2)]], dtype=np.complex128
+    )
+
 
 # --- 2. The O(1) Dispatch Table ---
 PARAM_GENERATORS = {
@@ -54,17 +47,18 @@ PARAM_GENERATORS = {
     "u": _gen_u,
 }
 
+
 # --- 3. The Pure Module-Level Function ---
 def get_gate_tensor(name: str, params: list, num_targets: int) -> np.ndarray:
     """Fetches or dynamically generates the requested gate matrix."""
     if name in STATIC_GATES:
         matrix = STATIC_GATES[name][2]
         return matrix.reshape((2,) * (2 * num_targets))
-        
+
     if name in PARAM_GENERATORS:
         matrix = PARAM_GENERATORS[name](params)
         return matrix.reshape((2, 2))
-        
+
     raise ValueError(f"Gate '{name}' is not supported by NumpySimulator.")
 
 
@@ -73,6 +67,7 @@ class NumpySimulator(Simulator):
     """
     A high-performance, tensor-network style statevector simulator using NumPy.
     """
+
     def run(self, circuit=None, parameter_binds: dict = None) -> np.ndarray:
         """
         Executes the circuit and returns the final N-dimensional state tensor.
@@ -82,11 +77,11 @@ class NumpySimulator(Simulator):
         target_circuit = circuit or self.circuit
         if target_circuit is None:
             raise ValueError("No circuit provided to run, and no circuit attached to Simulator.")
-        
+
         # --- NEW: Merge Circuit parameters with temporary binds ---
         # 1. Grab the circuit's inherent parameters (acting as the baseline)
-        final_binds = getattr(target_circuit, 'parameters', {}).copy()
-        
+        final_binds = getattr(target_circuit, "parameters", {}).copy()
+
         # 2. If the user passed explicit binds to this run(), they overwrite the baseline
         if parameter_binds:
             final_binds.update(parameter_binds)

@@ -6,6 +6,7 @@ from quex.parser import parse_qasm_string
 if TYPE_CHECKING:
     from quex.backends.base import Simulator
 
+
 class Circuit:
     """
     The internal, backend-agnostic representation of a quantum circuit in Quex.
@@ -22,7 +23,7 @@ class Circuit:
         self._layers: Optional[List[List[Dict[str, Any]]]] = None
 
         # New: The Attached Simulator (Calculator equivalent)
-        self._simulator: Optional['Simulator'] = None
+        self._simulator: Optional["Simulator"] = None
 
         # New: a dictionary for parameters.
         self.parameters: Dict[str, float] = {}
@@ -37,7 +38,7 @@ class Circuit:
         return self._simulator
 
     @simulator.setter
-    def simulator(self, calc: 'Simulator'):
+    def simulator(self, calc: "Simulator"):
         self._simulator = calc
         # Symmetric Link: Tell the simulator that WE are its circuit now.
         if calc is not None and calc.circuit is not self:
