@@ -1,5 +1,8 @@
 # src/quex/circuit.py
+import copy
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+
+import numpy as np
 
 from quex.parser import parse_qasm_string
 
@@ -33,6 +36,106 @@ class Circuit:
         else:
             self.wire_labels = wire_labels
 
+    def __add__(self, other: "Circuit") -> "Circuit":
+        """
+        Horizontal Concatenation (Sequence): qc1 + qc2
+        Appends qc2 to the end of qc1. Both must have the same number of qubits.
+        """
+        if not isinstance(other, Circuit):
+            return NotImplemented
+        if self.num_qubits != other.num_qubits:
+            raise ValueError(f"Cannot add circuits with different qubit counts ({self.num_qubits} vs {other.num_qubits}).")
+
+        # Create a new blank circuit
+        new_qc = Circuit(self.num_qubits, wire_labels=self.wire_labels.copy())
+
+        # Merge operations (Deep copy to prevent linking memory)
+        new_qc.operations = copy.deepcopy(self.operations) + copy.deepcopy(other.operations)
+
+        # Merge parameters (other overwrites self if there are naming collisions)
+        new_qc.parameters = {**self.parameters, **other.parameters}
+
+        return new_qc
+
+    def __and__(self, other: "Circuit") -> "Circuit":
+        """
+        Vertical Concatenation (Tensor Product): qc1 & qc2
+        Stacks qc2 'below' qc1, expanding the total number of qubits.
+        """
+        if not isinstance(other, Circuit):
+            return NotImplemented
+
+        total_qubits = self.num_qubits + other.num_qubits
+        new_labels = self.wire_labels + other.wire_labels
+        new_qc = Circuit(total_qubits, wire_labels=new_labels)
+
+        # 1. Add operations from the top circuit (indices stay the same)
+        new_qc.operations = copy.deepcopy(self.operations)
+
+        # 2. Add operations from the bottom circuit (Shift their target indices!)
+        shift = self.num_qubits
+        for op in copy.deepcopy(other.operations):
+            shifted_targets = []
+            for target_type, target_idx in op["targets"]:
+                shifted_targets.append((target_type, target_idx + shift))
+            op["targets"] = shifted_targets
+            new_qc.operations.append(op)
+
+        # 3. Merge parameters
+        new_qc.parameters = {**self.parameters, **other.parameters}
+
+        return new_qc
+
+    def __mul__(self, repetitions: int) -> "Circuit":
+        """
+        Repetition: qc * 3
+        Repeats the circuit 'n' times sequentially.
+        qc * 0 returns an empty Identity circuit on the same qubits.
+        """
+        if not isinstance(repetitions, int) or repetitions < 0:
+            raise ValueError("Circuit multiplication requires a positive integer.")
+
+        new_qc = Circuit(self.num_qubits, wire_labels=self.wire_labels.copy())
+        new_qc.parameters = self.parameters.copy()
+
+        for _ in range(repetitions):
+            new_qc.operations.extend(copy.deepcopy(self.operations))
+
+        return new_qc
+
+    def __rmul__(self, repetitions: int) -> "Circuit":
+        """
+        Right-side multiplication: 3 * qc
+        Routes perfectly back to standard multiplication.
+        """
+        return self.__mul__(repetitions)
+
+    @property
+    def wire_labels(self) -> List[str]:
+        return self._wire_labels
+
+    @wire_labels.setter
+    def wire_labels(self, labels: List[str]):
+        """Safely updates labels, ensuring the length matches the qubit count."""
+        if len(labels) != self.num_qubits:
+            raise ValueError(f"Provided {len(labels)} labels, but circuit has {self.num_qubits} qubits.")
+        self._wire_labels = labels
+
+    def reset_labels(self, prefix: str = "q"):
+        """
+        Resets all wire labels to a continuous sequential default.
+        Example: qc.reset_labels("sys") -> sys[0], sys[1], ...
+        """
+        self.wire_labels = [f"{prefix}[{i}]" for i in range(self.num_qubits)]
+
+    # --- NEW: Flattened view on demand ---
+    @property
+    def statevector(self) -> Optional[np.ndarray]:
+        """Returns the 1D flattened view of the N-dimensional state tensor."""
+        if self.state is None:
+            return None
+        return self.state.flatten()
+
     @property
     def simulator(self):
         return self._simulator
@@ -44,11 +147,47 @@ class Circuit:
         if calc is not None and calc.circuit is not self:
             calc.circuit = self
 
-    def run(self, parameter_binds: dict = None):
+    # --- UPDATED: Allow passing an initial state for composition! ---
+    def run(self, parameter_binds: dict = None, initial_state: np.ndarray = None):
         """Delegates simulation to the attached Simulator."""
         if self._simulator is None:
-            raise RuntimeError("No Simulator attached! Please assign a simulator first.")
-        return self._simulator.run(circuit=self, parameter_binds=parameter_binds)
+            raise RuntimeError("No Simulator attached! Assign qc.simulator = NumpySimulator() first.")
+        return self._simulator.run(circuit=self, parameter_binds=parameter_binds, initial_state=initial_state)
+
+    def get_probabilities(self) -> np.ndarray:
+        """
+        Calculates the exact mathematical probability of measuring each basis state.
+        Returns a 1D array of probabilities (P = |psi|^2).
+        """
+        if self.state is None:
+            raise RuntimeError("Circuit has no state. Please call qc.run() first.")
+
+        probs = np.abs(self.state) ** 2
+        return probs.flatten()
+
+    def sample_shots(self, shots: int = 1024) -> dict:
+        """
+        Simulates quantum hardware by collapsing the statevector 'shots' times.
+        Returns a dictionary of measured bitstrings and their counts.
+        """
+        if self.state is None:
+            raise RuntimeError("Circuit has no state. Please call qc.run() first.")
+
+        probs = self.get_probabilities()
+
+        # Generate all possible bitstrings for this number of qubits
+        format_str = f"{{:0{self.num_qubits}b}}"
+        bitstrings = [format_str.format(i) for i in range(2**self.num_qubits)]
+
+        # Roll the quantum dice!
+        samples = np.random.choice(bitstrings, size=shots, p=probs)
+
+        # Tally the results
+        counts = {}
+        for bitstring in samples:
+            counts[bitstring] = counts.get(bitstring, 0) + 1
+
+        return dict(sorted(counts.items()))
 
     def add_operation(self, gate: str, targets: Union[int, List[int], List[tuple]], params: Optional[List[Union[float, str]]] = None):
         """

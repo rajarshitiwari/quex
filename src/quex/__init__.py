@@ -8,6 +8,8 @@ Quantum circuit execution
 
 import importlib.metadata
 
+import numpy as np
+
 from quex.backends.numpy_sim import NumpySimulator
 from quex.circuit import Circuit
 from quex.parser import parse_qasm_string
@@ -22,6 +24,7 @@ __all__ = [
     "draw_dag",
     "draw_qiskit",
     "draw_structured_dag",
+    "np",
     "NumpySimulator",
     "parse_qasm_string",
     "random_ansatz",

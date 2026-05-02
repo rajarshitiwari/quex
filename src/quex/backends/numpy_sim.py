@@ -69,13 +69,14 @@ class NumpySimulator(Simulator):
     A high-performance, tensor-network style statevector simulator using NumPy.
     """
 
-    def run(self, circuit=None, parameter_binds: dict = None) -> np.ndarray:
+    def run(self, circuit=None, parameter_binds: dict = None, initial_state: np.ndarray = None) -> np.ndarray:
         """
         Executes the circuit and returns the final N-dimensional state tensor.
         Accepts an optional dictionary of parameter bindings.
         Allows passing a circuit directly, OR fallback to the attached circuit.
         """
         target_circuit = circuit or self.circuit
+
         if target_circuit is None:
             raise ValueError("No circuit provided to run, and no circuit attached to Simulator.")
 
@@ -91,10 +92,19 @@ class NumpySimulator(Simulator):
         if num_qubits == 0:
             return np.array([])
 
-        # 1. Initialize the state to |00...0>
-        # A 3-qubit state is shape (2, 2, 2). Only index [0, 0, 0] is 1.0.
-        state = np.zeros((2,) * num_qubits, dtype=np.complex128)
-        state[(0,) * num_qubits] = 1.0
+        # 1. Initialize the state to |00...0>, or use existing
+        # --- NEW: State Injection Logic ---
+        # Below logic needs to be revisited.
+        if initial_state is not None:
+            # We MUST copy it so we don't accidentally mutate the previous circuit's memory!
+            state = initial_state.copy()
+            # Ensure it's reshaped to the tensor format our engine expects
+            state = state.reshape((2,) * num_qubits)
+        else:
+            # Default to all-zeros |00...0>
+            # Example: A 3-qubit state is shape (2, 2, 2). Only index [0, 0, 0] is 1.0.
+            state = np.zeros((2,) * num_qubits, dtype=np.complex128)
+            state[(0,) * num_qubits] = 1.0
 
         # 2. Iterate through the topological operations
         for op in target_circuit.operations:
@@ -132,5 +142,8 @@ class NumpySimulator(Simulator):
             # Step C: tensordot dumps the new output axes at the very front of the array (indices 0 to k-1).
             # We must move them back to their proper physical qubit slots.
             state = np.moveaxis(state, source=list(range(k)), destination=targets)
+            # --- NEW: Save the result to the Circuit object ---
 
-        return state
+        target_circuit.state = state
+
+        return target_circuit.statevector
