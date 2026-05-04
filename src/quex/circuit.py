@@ -540,3 +540,81 @@ class Circuit:
             lines.append(f"{gate_part} {targets_str};")
 
         return "\n".join(lines)
+
+    def _find_spanning_gates(self, boundary_qubit: int) -> list:
+        """
+        Finds all 2+ qubit gates that cross the boundary.
+        The boundary divides the circuit into:
+        Top: qubits 0 to boundary_qubit - 1
+        Bottom: qubits boundary_qubit to N - 1
+
+        Returns a list of tuples: (operation_index, operation_dict)
+        """
+        spanning_gates = []
+
+        for idx, op in enumerate(self.operations):
+            # We only care about gates with multiple targets
+            if isinstance(op["targets"], list) and len(op["targets"]) > 1:
+                # Extract just the integer indices from the targets list
+                # Assuming targets look like: [('q', 0), ('q', 1)] or just [0, 1]
+                # (Adjust this depending on how you strictly store targets internally!)
+                indices = [t if isinstance(t, int) else t[1] for t in op["targets"]]
+
+                has_top = any(i < boundary_qubit for i in indices)
+                has_bottom = any(i >= boundary_qubit for i in indices)
+
+                if has_top and has_bottom:
+                    spanning_gates.append((idx, op))
+
+        return spanning_gates
+
+    def cleave(self, boundary_qubit: int):
+        """
+        Cleaves the circuit horizontally into two independent sub-circuits.
+        Top circuit: qubits 0 to boundary_qubit - 1
+        Bottom circuit: qubits boundary_qubit to N - 1
+
+        Returns:
+            qc_top (Circuit): The upper sub-circuit.
+            qc_bottom (Circuit): The lower sub-circuit.
+            spanning_gates (list): The metadata of the gates that were cut.
+        """
+        if not (0 < boundary_qubit < self.num_qubits):
+            raise ValueError(f"Boundary must be between 1 and {self.num_qubits - 1}.")
+
+        # 1. Initialize the two independent sub-circuits
+        # We use self.__class__ to instantiate new circuits safely
+        qc_top = self.__class__(num_qubits=boundary_qubit, wire_labels=self.wire_labels[:boundary_qubit].copy())
+        qc_bottom = self.__class__(num_qubits=self.num_qubits - boundary_qubit, wire_labels=self.wire_labels[boundary_qubit:].copy())
+
+        # 2. Find the bridges
+        spanning_gates_info = self._find_spanning_gates(boundary_qubit)
+        spanning_indices = {idx for idx, _ in spanning_gates_info}
+
+        # 3. Route the gates safely using our optimized copy method
+        for idx, op in enumerate(self.operations):
+            if idx in spanning_indices:
+                continue  # Skip the bridges! (They are returned as metadata)
+
+            # Extract target indices
+            indices = [t if isinstance(t, int) else t[1] for t in op["targets"]]
+
+            if all(i < boundary_qubit for i in indices):
+                # Purely Top: Add exactly as is
+                qc_top.operations.extend(self._copy_ops([op]))
+
+            elif all(i >= boundary_qubit for i in indices):
+                # Purely Bottom: Copy and SHIFT the target indices!
+                shifted_op = self._copy_ops([op])[0]
+                new_targets = []
+                for t in shifted_op["targets"]:
+                    if isinstance(t, int):
+                        new_targets.append(t - boundary_qubit)
+                    else:
+                        # Handles tuple formats like ('q', index)
+                        new_targets.append((t[0], t[1] - boundary_qubit))
+
+                shifted_op["targets"] = new_targets
+                qc_bottom.operations.append(shifted_op)
+
+        return qc_top, qc_bottom, spanning_gates_info
