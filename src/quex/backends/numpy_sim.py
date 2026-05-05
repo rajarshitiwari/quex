@@ -48,19 +48,27 @@ PARAM_GENERATORS = {
     "u": _gen_u,
 }
 
+# --- NEW: The Global Tensor Cache ---
+# Pre-allocate and pre-reshape all static gates ONCE on module load.
+# This prevents calling .reshape() millions of times in the simulation loop.
+_TENSOR_CACHE = {}
+for gate_name, (num_qubits, num_params, matrix) in STATIC_GATES.items():
+    _TENSOR_CACHE[gate_name] = matrix.reshape((2,) * (2 * num_qubits))
 
-# --- 3. The Pure Module-Level Function ---
+
+# --- 3. The Pure Module-Level Function (Updated) ---
 def get_gate_tensor(name: str, params: list, num_targets: int) -> np.ndarray:
     """Fetches or dynamically generates the requested gate matrix."""
-    if name in STATIC_GATES:
-        matrix = STATIC_GATES[name][2]
-        return matrix.reshape((2,) * (2 * num_targets))
 
+    # Fast-path: O(1) lookup returns a pure memory reference! No reshaping needed.
+    if name in _TENSOR_CACHE:
+        return _TENSOR_CACHE[name]
+
+    # Dynamic generation for parameterized gates
     if name in PARAM_GENERATORS:
         matrix = PARAM_GENERATORS[name](params)
         return matrix.reshape((2, 2))
-
-    raise ValueError(f"Gate '{name}' is not supported by NumpySimulator.")
+    raise ValueError(f"Gate '{name}' is not supported yet by NumpySimulator.")
 
 
 # --- 4. The Refined Class ---

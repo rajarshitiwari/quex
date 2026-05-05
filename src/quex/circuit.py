@@ -50,7 +50,7 @@ class Circuit:
         new_qc = Circuit(self.num_qubits, wire_labels=self.wire_labels.copy())
 
         # Merge operations (Deep copy to prevent linking memory)
-        new_qc.operations = copy.deepcopy(self.operations) + copy.deepcopy(other.operations)
+        new_qc.operations = self._copy_ops(self.operations) + self._copy_ops(other.operations)
 
         # Merge parameters (other overwrites self if there are naming collisions)
         new_qc.parameters = {**self.parameters, **other.parameters}
@@ -70,11 +70,11 @@ class Circuit:
         new_qc = Circuit(total_qubits, wire_labels=new_labels)
 
         # 1. Add operations from the top circuit (indices stay the same)
-        new_qc.operations = copy.deepcopy(self.operations)
+        new_qc.operations = self._copy_ops(self.operations)
 
         # 2. Add operations from the bottom circuit (Shift their target indices!)
         shift = self.num_qubits
-        for op in copy.deepcopy(other.operations):
+        for op in self._copy_ops(other.operations):
             shifted_targets = []
             for target_type, target_idx in op["targets"]:
                 shifted_targets.append((target_type, target_idx + shift))
@@ -99,7 +99,7 @@ class Circuit:
         new_qc.parameters = self.parameters.copy()
 
         for _ in range(repetitions):
-            new_qc.operations.extend(copy.deepcopy(self.operations))
+            new_qc.operations.extend(self._copy_ops(self.operations))
 
         return new_qc
 
@@ -109,6 +109,21 @@ class Circuit:
         Routes perfectly back to standard multiplication.
         """
         return self.__mul__(repetitions)
+
+    @staticmethod
+    def _copy_ops(ops_list: list) -> list:
+        """
+        shallow-deep copy for the operations schema.
+        Bypasses the overhead of Python's generic copy.deepcopy().
+        """
+        return [
+            {
+                "gate": op["gate"],  # Strings are immutable, safe to reference
+                "targets": op["targets"].copy() if isinstance(op["targets"], list) else op["targets"],
+                "params": op["params"].copy() if isinstance(op["params"], list) else op["params"],
+            }
+            for op in ops_list
+        ]
 
     @property
     def wire_labels(self) -> List[str]:
