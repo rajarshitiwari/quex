@@ -1,5 +1,5 @@
 # src/quex/circuit.py
-import copy
+
 from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
 
 import numpy as np
@@ -162,6 +162,24 @@ class Circuit:
         if calc is not None and calc.circuit is not self:
             calc.circuit = self
 
+    def copy(self):
+        """Returns an independent copy of the circuit."""
+        new_qc = self.__class__(self.num_qubits, self.wire_labels.copy())
+        new_qc.operations = self._copy_ops(self.operations)
+        return new_qc
+
+    def pop(self, index: int = -1) -> dict:
+        """Removes and returns an operation. Defaults to the last gate."""
+        popped_op = self.operations.pop(index)
+        self._layers = None  # Old self.layer is useless now, as circuit changed!
+        return popped_op
+
+    def insert(self, index: int, gate: str, targets: list, params: list = None):
+        """Inserts a gate at a specific index in the execution timeline."""
+        op = {"gate": gate, "targets": targets if isinstance(targets, list) else [targets], "params": params or []}
+        self.operations.insert(index, op)
+        self._layers = None  # Old self.layer is useless now, as circuit changed!
+
     # --- UPDATED: Allow passing an initial state for composition! ---
     def run(self, parameter_binds: dict = None, initial_state: np.ndarray = None):
         """Delegates simulation to the attached Simulator."""
@@ -248,41 +266,6 @@ class Circuit:
         # --- if circuit changed, re-evaluate layers ---
         self._layers = None
 
-    def add_operation1(self, gate: str, targets: Union[int, List[int], List[tuple]], params: Optional[List[float]] = None):
-        """
-        Programmatically add an operation to the circuit.
-        Friendly UX: 'targets' accepts a single int, a list of ints, or internal tuples.
-        """
-        if params is None:
-            params = []
-
-        # --- Input Normalisation ---
-        normalised_targets = []
-
-        # Case 1: User passed a single integer -> qc.add_operation('x', 0)
-        if isinstance(targets, int):
-            normalised_targets.append(("q", targets))
-
-        # Case 2: User passed a list
-        elif isinstance(targets, list):
-            for t in targets:
-                if isinstance(t, int):
-                    # qc.add_operation('cx', [0, 1])
-                    normalised_targets.append(("q", t))
-                elif isinstance(t, tuple):
-                    # Internal parser format: qc.add_operation('x', [('q', 0)])
-                    normalised_targets.append(t)
-                else:
-                    raise ValueError(f"Target {t} must be an integer or tuple.")
-        else:
-            raise ValueError("Targets must be an int, list of ints, or list of tuples.")
-
-        op = {"gate": gate.lower(), "params": params, "targets": normalised_targets}
-        self.operations.append(op)
-
-        # --- if circuit changed, re-evaluate layers
-        self._layers = None
-
     @property
     def layers(self) -> List[List[Dict[str, Any]]]:
         """
@@ -292,6 +275,11 @@ class Circuit:
         if self._layers is None:
             self._layers = self._build_layers()
         return self._layers
+
+    @property
+    def num_gates(self) -> int:
+        """Returns the total number of operations in the circuit."""
+        return len(self.operations)
 
     @property
     def depth(self) -> int:
@@ -555,3 +543,81 @@ class Circuit:
             lines.append(f"{gate_part} {targets_str};")
 
         return "\n".join(lines)
+
+    def _find_spanning_gates(self, boundary_qubit: int) -> list:
+        """
+        Finds all 2+ qubit gates that cross the boundary.
+        The boundary divides the circuit into:
+        Top: qubits 0 to boundary_qubit - 1
+        Bottom: qubits boundary_qubit to N - 1
+
+        Returns a list of tuples: (operation_index, operation_dict)
+        """
+        spanning_gates = []
+
+        for idx, op in enumerate(self.operations):
+            # We only care about gates with multiple targets
+            if isinstance(op["targets"], list) and len(op["targets"]) > 1:
+                # Extract just the integer indices from the targets list
+                # Assuming targets look like: [('q', 0), ('q', 1)] or just [0, 1]
+                # (Adjust this depending on how you strictly store targets internally!)
+                indices = [t if isinstance(t, int) else t[1] for t in op["targets"]]
+
+                has_top = any(i < boundary_qubit for i in indices)
+                has_bottom = any(i >= boundary_qubit for i in indices)
+
+                if has_top and has_bottom:
+                    spanning_gates.append((idx, op))
+
+        return spanning_gates
+
+    def cleave(self, boundary_qubit: int):
+        """
+        Cleaves the circuit horizontally into two independent sub-circuits.
+        Top circuit: qubits 0 to boundary_qubit - 1
+        Bottom circuit: qubits boundary_qubit to N - 1
+
+        Returns:
+            qc_top (Circuit): The upper sub-circuit.
+            qc_bottom (Circuit): The lower sub-circuit.
+            spanning_gates (list): The metadata of the gates that were cut.
+        """
+        if not (0 < boundary_qubit < self.num_qubits):
+            raise ValueError(f"Boundary must be between 1 and {self.num_qubits - 1}.")
+
+        # 1. Initialize the two independent sub-circuits
+        # We use self.__class__ to instantiate new circuits safely
+        qc_top = self.__class__(num_qubits=boundary_qubit, wire_labels=self.wire_labels[:boundary_qubit].copy())
+        qc_bottom = self.__class__(num_qubits=self.num_qubits - boundary_qubit, wire_labels=self.wire_labels[boundary_qubit:].copy())
+
+        # 2. Find the bridges
+        spanning_gates_info = self._find_spanning_gates(boundary_qubit)
+        spanning_indices = {idx for idx, _ in spanning_gates_info}
+
+        # 3. Route the gates safely using our optimized copy method
+        for idx, op in enumerate(self.operations):
+            if idx in spanning_indices:
+                continue  # Skip the bridges! (They are returned as metadata)
+
+            # Extract target indices
+            indices = [t if isinstance(t, int) else t[1] for t in op["targets"]]
+
+            if all(i < boundary_qubit for i in indices):
+                # Purely Top: Add exactly as is
+                qc_top.operations.extend(self._copy_ops([op]))
+
+            elif all(i >= boundary_qubit for i in indices):
+                # Purely Bottom: Copy and SHIFT the target indices!
+                shifted_op = self._copy_ops([op])[0]
+                new_targets = []
+                for t in shifted_op["targets"]:
+                    if isinstance(t, int):
+                        new_targets.append(t - boundary_qubit)
+                    else:
+                        # Handles tuple formats like ('q', index)
+                        new_targets.append((t[0], t[1] - boundary_qubit))
+
+                shifted_op["targets"] = new_targets
+                qc_bottom.operations.append(shifted_op)
+
+        return qc_top, qc_bottom, spanning_gates_info
