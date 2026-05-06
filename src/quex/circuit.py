@@ -1,10 +1,11 @@
 # src/quex/circuit.py
 
-from typing import TYPE_CHECKING, Any, Dict, List, Optional, Union
+from typing import TYPE_CHECKING, Any, Dict, Iterable, List, Optional, Union
 
 import numpy as np
 
 from quex.parser import parse_qasm_string
+from quex.utils import OpList
 
 if TYPE_CHECKING:
     from quex.backends.base import Simulator
@@ -21,12 +22,12 @@ class Circuit:
         """
         self.num_qubits = num_qubits
 
-        # The flat list of operations (Gate Name, Params, Targets)
-        self.operations: List[Dict[str, Any]] = []
-        self._layers: Optional[List[List[Dict[str, Any]]]] = None
-
+        self._layers = None
         # New: The Attached Simulator (Calculator equivalent)
         self._simulator: Optional["Simulator"] = None
+
+        # The flat list of operations (Gate Name, Params, Targets)
+        self.operations: OpList[Dict[str, Any]] = OpList(callback=self._reset_cache)
 
         # New: a dictionary for parameters.
         self.parameters: Dict[str, float] = {}
@@ -35,6 +36,11 @@ class Circuit:
             self.wire_labels = [f"q[{i}]" for i in range(num_qubits)]
         else:
             self.wire_labels = wire_labels
+
+    def _reset_cache(self):
+        """Wipes cached properties so they rebuild on next access."""
+        self._layers = None
+        # If we put anything similar like self._depth_cache, we just add them here!
 
     def __add__(self, other: "Circuit") -> "Circuit":
         """
@@ -111,7 +117,7 @@ class Circuit:
         return self.__mul__(repetitions)
 
     @staticmethod
-    def _copy_ops(ops_list: list) -> list:
+    def _copy_ops(ops_list: Iterable[Dict[str, Any]]) -> list[Dict[str, Any]]:
         """
         shallow-deep copy for the operations schema.
         Bypasses the overhead of Python's generic copy.deepcopy().
@@ -165,20 +171,26 @@ class Circuit:
     def copy(self):
         """Returns an independent copy of the circuit."""
         new_qc = self.__class__(self.num_qubits, self.wire_labels.copy())
-        new_qc.operations = self._copy_ops(self.operations)
+        copied_ops = self._copy_ops(self.operations)
+        new_qc.operations.extend(copied_ops)
+        # new_qc.operations = self._copy_ops(self.operations)
         return new_qc
 
     def pop(self, index: int = -1) -> dict:
-        """Removes and returns an operation. Defaults to the last gate."""
+        """
+        Removes and returns an operation. Defaults to the last gate.
+        Old self.layer gets reset now, as circuit changed!
+        """
         popped_op = self.operations.pop(index)
-        self._layers = None  # Old self.layer is useless now, as circuit changed!
         return popped_op
 
     def insert(self, index: int, gate: str, targets: list, params: list = None):
-        """Inserts a gate at a specific index in the execution timeline."""
+        """
+        Inserts a gate at a specific index in the execution timeline.
+        Old self.layer gets reset now, as circuit changed!
+        """
         op = {"gate": gate, "targets": targets if isinstance(targets, list) else [targets], "params": params or []}
         self.operations.insert(index, op)
-        self._layers = None  # Old self.layer is useless now, as circuit changed!
 
     # --- UPDATED: Allow passing an initial state for composition! ---
     def run(self, parameter_binds: dict = None, initial_state: np.ndarray = None):
@@ -544,80 +556,58 @@ class Circuit:
 
         return "\n".join(lines)
 
-    def _find_spanning_gates(self, boundary_qubit: int) -> list:
-        """
-        Finds all 2+ qubit gates that cross the boundary.
-        The boundary divides the circuit into:
-        Top: qubits 0 to boundary_qubit - 1
-        Bottom: qubits boundary_qubit to N - 1
 
-        Returns a list of tuples: (operation_index, operation_dict)
-        """
-        spanning_gates = []
+def reconstruct_single_cut(qc_original: Circuit, boundary_qubit: int, bridge_info: tuple, simulator=None):
+    """
+    Reconstructs the full statevector after cutting a single CX gate,
+    preserving the exact temporal order of operations.
+    """
+    # Resolve which simulator backend to use: the passed simulator,
+    # or inherit the one attached to the original circuit
+    sim_backend = simulator or qc_original._simulator
+    if sim_backend is None:
+        raise RuntimeError("No simulator found. Attach a simulator to qc_original or pass one as an argument.")
 
-        for idx, op in enumerate(self.operations):
-            # We only care about gates with multiple targets
-            if isinstance(op["targets"], list) and len(op["targets"]) > 1:
-                # Extract just the integer indices from the targets list
-                # Assuming targets look like: [('q', 0), ('q', 1)] or just [0, 1]
-                # (Adjust this depending on how you strictly store targets internally!)
-                indices = [t if isinstance(t, int) else t[1] for t in op["targets"]]
+    idx, op = bridge_info
 
-                has_top = any(i < boundary_qubit for i in indices)
-                has_bottom = any(i >= boundary_qubit for i in indices)
+    # The CX Decomposition: 0.5 * (II + ZI + IX - ZX)
+    coefficients = [0.5, 0.5, 0.5, -0.5]
+    paulis_top = ["id", "z", "id", "z"]
+    paulis_bottom = ["id", "id", "x", "x"]
 
-                if has_top and has_bottom:
-                    spanning_gates.append((idx, op))
+    # The final 4-qubit statevector starts completely empty
+    total_state = np.zeros(2 ** (qc_original.num_qubits), dtype=np.complex128)
 
-        return spanning_gates
+    print("\n--- RUNNING SUB-CIRCUITS ---")
+    # Run the 4 parallel universes
+    for i in range(4):
+        print(f"Term {i + 1}: Applying {paulis_top[i]} (Top) and {paulis_bottom[i]} (Bottom)")
 
-    def cleave(self, boundary_qubit: int):
-        """
-        Cleaves the circuit horizontally into two independent sub-circuits.
-        Top circuit: qubits 0 to boundary_qubit - 1
-        Bottom circuit: qubits boundary_qubit to N - 1
+        # 1. Create a fresh copy of the ORIGINAL master circuit
+        temp_master = qc_original.copy()
 
-        Returns:
-            qc_top (Circuit): The upper sub-circuit.
-            qc_bottom (Circuit): The lower sub-circuit.
-            spanning_gates (list): The metadata of the gates that were cut.
-        """
-        if not (0 < boundary_qubit < self.num_qubits):
-            raise ValueError(f"Boundary must be between 1 and {self.num_qubits - 1}.")
+        # 2. Time Travel: Remove the entangling bridge
+        temp_master.operations.pop(idx)
 
-        # 1. Initialize the two independent sub-circuits
-        # We use self.__class__ to instantiate new circuits safely
-        qc_top = self.__class__(num_qubits=boundary_qubit, wire_labels=self.wire_labels[:boundary_qubit].copy())
-        qc_bottom = self.__class__(num_qubits=self.num_qubits - boundary_qubit, wire_labels=self.wire_labels[boundary_qubit:].copy())
+        # 3. Insert the local Paulis exactly where the bridge used to be!
+        temp_master.insert(index=idx, gate=paulis_bottom[i], targets=[op["targets"][1]])
+        temp_master.insert(index=idx, gate=paulis_top[i], targets=[op["targets"][0]])
 
-        # 2. Find the bridges
-        spanning_gates_info = self._find_spanning_gates(boundary_qubit)
-        spanning_indices = {idx for idx, _ in spanning_gates_info}
+        # 4. Cleave this newly un-entangled master circuit
+        qc_top, qc_bottom, _ = temp_master.cleave(boundary_qubit)
 
-        # 3. Route the gates safely using our optimized copy method
-        for idx, op in enumerate(self.operations):
-            if idx in spanning_indices:
-                continue  # Skip the bridges! (They are returned as metadata)
+        # 5. inject the resolved simulator backend
+        qc_top.simulator = sim_backend
+        qc_bottom.simulator = sim_backend
 
-            # Extract target indices
-            indices = [t if isinstance(t, int) else t[1] for t in op["targets"]]
+        qc_top.run()
+        qc_bottom.run()
 
-            if all(i < boundary_qubit for i in indices):
-                # Purely Top: Add exactly as is
-                qc_top.operations.extend(self._copy_ops([op]))
+        # 6. The Magic: Flatten and Kronecker product
+        state_top_1d = qc_top.state.flatten()
+        state_bot_1d = qc_bottom.state.flatten()
 
-            elif all(i >= boundary_qubit for i in indices):
-                # Purely Bottom: Copy and SHIFT the target indices!
-                shifted_op = self._copy_ops([op])[0]
-                new_targets = []
-                for t in shifted_op["targets"]:
-                    if isinstance(t, int):
-                        new_targets.append(t - boundary_qubit)
-                    else:
-                        # Handles tuple formats like ('q', index)
-                        new_targets.append((t[0], t[1] - boundary_qubit))
+        combined_term = coefficients[i] * np.kron(state_top_1d, state_bot_1d)
+        total_state += combined_term
 
-                shifted_op["targets"] = new_targets
-                qc_bottom.operations.append(shifted_op)
-
-        return qc_top, qc_bottom, spanning_gates_info
+    return total_state
