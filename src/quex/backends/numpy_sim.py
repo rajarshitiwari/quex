@@ -82,6 +82,14 @@ class NumpySimulator(Simulator):
         super().__init__()
         self.xp = np
 
+    def _get_backend_tensor(self, name: str, params: list, num_targets: int):
+        """
+        Bridge method: Fetches the CPU tensor from the module-level function.
+        Subclasses (like CuPy) will override this to intercept the data.
+        """
+        # Just call your top-level function directly
+        return get_gate_tensor(name, params, num_targets)
+
     def run(self, circuit=None, parameter_binds: dict = None, initial_state: ArrayLike = None) -> ArrayLike:
         """
         Executes the circuit and returns the final N-dimensional state tensor.
