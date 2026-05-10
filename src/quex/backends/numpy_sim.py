@@ -7,6 +7,8 @@ Module for the numpy simulator backend.
 
 import numpy as np
 
+from numpy.typing import ArrayLike
+
 from quex.backends.base import Simulator
 from quex.gates import STATIC_GATES
 
@@ -77,7 +79,11 @@ class NumpySimulator(Simulator):
     A high-performance, tensor-network style statevector simulator using NumPy.
     """
 
-    def run(self, circuit=None, parameter_binds: dict = None, initial_state: np.ndarray = None) -> np.ndarray:
+    def __init__(self):
+        super().__init__()
+        self.xp = np
+
+    def run(self, circuit=None, parameter_binds: dict = None, initial_state: ArrayLike = None) -> ArrayLike:
         """
         Executes the circuit and returns the final N-dimensional state tensor.
         Accepts an optional dictionary of parameter bindings.
@@ -98,7 +104,7 @@ class NumpySimulator(Simulator):
 
         num_qubits = target_circuit.num_qubits
         if num_qubits == 0:
-            return np.array([])
+            return self.xp.array([])
 
         # 1. Initialize the state to |00...0>, or use existing
         # --- NEW: State Injection Logic ---
@@ -111,7 +117,7 @@ class NumpySimulator(Simulator):
         else:
             # Default to all-zeros |00...0>
             # Example: A 3-qubit state is shape (2, 2, 2). Only index [0, 0, 0] is 1.0.
-            state = np.zeros((2,) * num_qubits, dtype=np.complex128)
+            state = self.xp.zeros((2,) * num_qubits, dtype=self.xp.complex128)
             state[(0,) * num_qubits] = 1.0
 
         # 2. Iterate through the topological operations
@@ -145,11 +151,11 @@ class NumpySimulator(Simulator):
             gate_input_axes = list(range(k, 2 * k))
 
             # Step B: Multiply the gate's input axes against the state's target axes
-            state = np.tensordot(gate_tensor, state, axes=(gate_input_axes, targets))
+            state = self.xp.tensordot(gate_tensor, state, axes=(gate_input_axes, targets))
 
             # Step C: tensordot dumps the new output axes at the very front of the array (indices 0 to k-1).
             # We must move them back to their proper physical qubit slots.
-            state = np.moveaxis(state, source=list(range(k)), destination=targets)
+            state = self.xp.moveaxis(state, source=list(range(k)), destination=targets)
             # --- NEW: Save the result to the Circuit object ---
 
         target_circuit.state = state
