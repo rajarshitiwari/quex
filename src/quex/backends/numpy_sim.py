@@ -6,7 +6,6 @@ Module for the numpy simulator backend.
 """
 
 import numpy as np
-
 from numpy.typing import ArrayLike
 
 from quex.backends.base import Simulator
