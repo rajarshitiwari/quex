@@ -82,6 +82,12 @@ class NumpySimulator(Simulator):
         super().__init__()
         self.xp = np
 
+    def _allocate_initial_state(self, num_qubits: int) -> ArrayLike:
+        """Allocates the default |00...0> state (Overridable by JAX)."""
+        state = self.xp.zeros((2,) * num_qubits, dtype=self.xp.complex128)
+        state[(0,) * num_qubits] = 1.0
+        return state
+
     def _get_backend_tensor(self, name: str, params: list, num_targets: int):
         """
         Bridge method: Fetches the CPU tensor from the module-level function.
@@ -124,8 +130,7 @@ class NumpySimulator(Simulator):
         else:
             # Default to all-zeros |00...0>
             # Example: A 3-qubit state is shape (2, 2, 2). Only index [0, 0, 0] is 1.0.
-            state = self.xp.zeros((2,) * num_qubits, dtype=self.xp.complex128)
-            state[(0,) * num_qubits] = 1.0
+            state = self._allocate_initial_state(num_qubits)
 
         # 2. Iterate through the topological operations
         for op in target_circuit.operations:
