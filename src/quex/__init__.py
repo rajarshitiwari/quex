@@ -12,6 +12,7 @@ import numpy as np
 
 from quex.backends.jax_sim import JaxSimulator
 from quex.backends.numpy_sim import NumpySimulator
+from quex.backends.cupy_sim import CupySimulator
 from quex.circuit import Circuit, reconstruct_single_cut
 from quex.parser import parse_qasm_string
 from quex.qrandom import random_ansatz, random_ansatz_P, random_ansatz_U, random_qasm, random_qiskit
@@ -26,6 +27,7 @@ __all__ = [
     "draw_qiskit",
     "draw_structured_dag",
     "np",
+    "CupySimulator",
     "JaxSimulator",
     "NumpySimulator",
     "parse_qasm_string",
