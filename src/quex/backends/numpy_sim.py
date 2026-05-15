@@ -155,7 +155,7 @@ class NumpySimulator(Simulator):
             k = len(targets)  # How many qubits this gate touches
 
             # Call the module-level function
-            gate_tensor = get_gate_tensor(gate_name, bound_params, k)
+            gate_tensor = self._get_backend_tensor(gate_name, bound_params, k)
 
             # --- THE TENSOR CONTRACTION MAGIC ---
 
