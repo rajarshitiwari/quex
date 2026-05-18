@@ -136,18 +136,7 @@ class NumpySimulator(Simulator):
             gate_name = op["gate"]
 
             # --- Parameter Binding part ---
-            bound_params = []
-            if op["params"]:
-                for p in op["params"]:
-                    # If the parameter is a string (variable name), look it up in the dict
-                    if isinstance(p, str):
-                        if p not in final_binds:
-                            raise ValueError(f"Unbound parameter: '{p}'. Set it via qc.parameters or pass it to run().")
-                        bound_params.append(float(final_binds[p]))
-                    else:
-                        # It's already a number
-                        bound_params.append(p)
-            # -------------------------------
+            bound_params = self._bind_params(op["params"], final_binds)
 
             # Extract clean integer targets (e.g., [0, 1])
             targets = [t[1] for t in op["targets"] if t[1] is not None]
@@ -188,16 +177,8 @@ class NumpySimulator(Simulator):
 
             for op in layer:
                 # ... resolve parameters ...
-                bound_params = []
-                if op["params"]:
-                    for p in op["params"]:
-                        if isinstance(p, str):
-                            if p not in final_binds:
-                                raise ValueError(f"Unbound parameter: '{p}'")
-                            bound_params.append(float(final_binds[p]))
-                        else:
-                            bound_params.append(p)
-                
+                bound_params = self._bind_params(op["params"], final_binds)
+                                
                 targets = [t[1] for t in op["targets"] if t[1] is not None]
                 k = len(targets)
 

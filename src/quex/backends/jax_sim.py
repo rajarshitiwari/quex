@@ -11,7 +11,10 @@ from quex.backends.numpy_sim import NumpySimulator
 try:
     import jax
     import jax.numpy as jnp
-
+    # --- This is important! ---
+    # Force JAX to use physics-grade 64-bit precision globally 
+    # to ensure statevector unitarity and accuracy.
+    jax.config.update("jax_enable_x64", True)
     HAS_JAX = True
 except ImportError:
     jax = None
