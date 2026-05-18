@@ -11,7 +11,10 @@ from quex.backends.numpy_sim import NumpySimulator
 try:
     import jax
     import jax.numpy as jnp
-
+    # --- This is important! ---
+    # Force JAX to use physics-grade 64-bit precision globally 
+    # to ensure statevector unitarity and accuracy.
+    jax.config.update("jax_enable_x64", True)
     HAS_JAX = True
 except ImportError:
     jax = None
@@ -25,8 +28,8 @@ class JaxSimulator(NumpySimulator):
     Provides automatic differentiation capabilities.
     """
 
-    def __init__(self):
-        super().__init__()
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
 
         if not HAS_JAX:
             raise ImportError("JAX is not installed. Run `pip install jax jaxlib` (or `jax-metal` for Mac).")

@@ -5,6 +5,7 @@ Cupy Simulator
 
 # src/quex/simulators/cupy_sim.py
 from .numpy_sim import NumpySimulator
+from numpy.typing import ArrayLike
 
 
 # Handle the optional dependency safely at the module level!
@@ -23,9 +24,9 @@ class CupySimulator(NumpySimulator):
     Inherits the exact tensor contraction logic from NumpySimulator.
     """
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         # 1. Trigger the standard setup (which sets self._circuit = None)
-        super().__init__()
+        super().__init__(**kwargs)
 
         # 2. Overwrite the math backend for VRAM
         if not HAS_CUPY:
@@ -35,6 +36,15 @@ class CupySimulator(NumpySimulator):
 
         # 3. Create the dedicated VRAM cache to prevent PCIe bottlenecks
         self._gpu_tensor_cache = {}
+
+    def _allocate_initial_state(self, num_qubits: int) -> ArrayLike:
+        """
+        Allocates the default |00...0> state natively in GPU VRAM.
+        CuPy supports in-place mutation, so this matches NumPy exactly.
+        """
+        state = self.xp.zeros((2,) * num_qubits, dtype=self.xp.complex128)
+        state[(0,) * num_qubits] = 1.0
+        return state
 
     def _get_backend_tensor(self, name: str, params: list, num_targets: int):
         """
@@ -53,16 +63,3 @@ class CupySimulator(NumpySimulator):
 
         # 3. Return the VRAM array
         return self._gpu_tensor_cache[cache_key]
-
-    def get_state(self, host: bool = True):
-        """
-        Safely retrieves the statevector.
-        If host=True, downloads the array from GPU VRAM back to CPU RAM as a Numpy array.
-        If host=False, returns the raw CuPy array for on-device hybrid workflows.
-        """
-        if self.state is None:
-            return None
-
-        if host:
-            return self.xp.asnumpy(self.state)
-        return self.state
