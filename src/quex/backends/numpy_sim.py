@@ -7,10 +7,11 @@ Module for the numpy simulator backend.
 
 import numpy as np
 from numpy.typing import ArrayLike
+from typing import Literal
 
 from quex.backends.base import Simulator
 from quex.gates import STATIC_GATES
-
+from threadpoolctl import threadpool_limits
 
 # --- 1. Independent Matrix Generators ---
 def _gen_rx(params: list) -> np.ndarray:
@@ -78,9 +79,20 @@ class NumpySimulator(Simulator):
     A high-performance, tensor-network style statevector simulator using NumPy.
     """
 
-    def __init__(self):
+    def __init__(self,
+                 num_threads: int = None,
+                 exec_mode: Literal["sequential", "fused"] = "sequential",
+                 max_fused_qubits: int = 4
+                 ):
         super().__init__()
         self.xp = np
+        self.num_threads = num_threads
+        self.exec_mode = exec_mode
+        self._run_ops = {
+            "sequential": self._run_sequential,
+            "fused": self._run_fused
+        }
+        self.max_fused_qubits = max_fused_qubits
 
     def _allocate_initial_state(self, num_qubits: int) -> ArrayLike:
         """Allocates the default |00...0> state (Overridable by JAX)."""
@@ -96,44 +108,31 @@ class NumpySimulator(Simulator):
         # Just call your top-level function directly
         return get_gate_tensor(name, params, num_targets)
 
-    def run(self, circuit=None, parameter_binds: dict = None, initial_state: ArrayLike = None) -> ArrayLike:
-        """
-        Executes the circuit and returns the final N-dimensional state tensor.
-        Accepts an optional dictionary of parameter bindings.
-        Allows passing a circuit directly, OR fallback to the attached circuit.
-        """
-        target_circuit = circuit or self.circuit
+    def _bind_params(self, params: list, final_binds: dict) -> list:
+        """Helper method to resolve symbolic parameters into floats."""
+        if not params:
+            return []
+            
+        bound_params = []
+        for p in params:
+            # If the parameter is a string (variable name), look it up in the dict
+            if isinstance(p, str):
+                if p not in final_binds:
+                    raise ValueError(f"Unbound parameter: '{p}'. Set it via qc.parameters or pass it to run().")
+                bound_params.append(float(final_binds[p]))
+            else:
+                # It's already a number
+                bound_params.append(p)
+                
+        return bound_params
 
-        if target_circuit is None:
-            raise ValueError("No circuit provided to run, and no circuit attached to Simulator.")
-
-        # --- NEW: Merge Circuit parameters with temporary binds ---
-        # 1. Grab the circuit's inherent parameters (acting as the baseline)
-        final_binds = getattr(target_circuit, "parameters", {}).copy()
-
-        # 2. If the user passed explicit binds to this run(), they overwrite the baseline
-        if parameter_binds:
-            final_binds.update(parameter_binds)
-
-        num_qubits = target_circuit.num_qubits
-        if num_qubits == 0:
-            return self.xp.array([])
-
-        # 1. Initialize the state to |00...0>, or use existing
-        # --- NEW: State Injection Logic ---
-        # Below logic needs to be revisited.
-        if initial_state is not None:
-            # We MUST copy it so we don't accidentally mutate the previous circuit's memory!
-            state = initial_state.copy()
-            # Ensure it's reshaped to the tensor format our engine expects
-            state = state.reshape((2,) * num_qubits)
-        else:
-            # Default to all-zeros |00...0>
-            # Example: A 3-qubit state is shape (2, 2, 2). Only index [0, 0, 0] is 1.0.
-            state = self._allocate_initial_state(num_qubits)
-
-        # 2. Iterate through the topological operations
-        for op in target_circuit.operations:
+    def _run_sequential(self, circuit, state, final_binds):
+        """The original gate-by-gate loop."""
+        for op in circuit.operations:
+            gate_tensor = self._get_backend_tensor(op["gate"], op["params"], len(op["targets"]))
+            # ... tensordot and moveaxis ...
+                # 2. Iterate through the topological operations
+        for op in circuit.operations:
             gate_name = op["gate"]
 
             # --- Parameter Binding part ---
@@ -169,6 +168,121 @@ class NumpySimulator(Simulator):
             # We must move them back to their proper physical qubit slots.
             state = self.xp.moveaxis(state, source=list(range(k)), destination=targets)
             # --- NEW: Save the result to the Circuit object ---
+
+        return state
+
+    def _run_fused(self, target_circuit, state, final_binds):
+        """High-performance layer-by-layer execution using Blocked Gate Fusion."""
+        
+        # The ultimate sweet spot for CPU/GPU L1 Cache is usually 3 to 5 qubits.
+        # We can expose this to the user later, but 4 is a very safe default.
+        max_fused_qubits = self.max_fused_qubits
+
+        for layer in target_circuit.layers:
+            if not layer:
+                continue
+
+            chunk_matrix = None
+            chunk_targets = []
+            chunk_k = 0
+
+            for op in layer:
+                # ... resolve parameters ...
+                bound_params = []
+                if op["params"]:
+                    for p in op["params"]:
+                        if isinstance(p, str):
+                            if p not in final_binds:
+                                raise ValueError(f"Unbound parameter: '{p}'")
+                            bound_params.append(float(final_binds[p]))
+                        else:
+                            bound_params.append(p)
+                
+                targets = [t[1] for t in op["targets"] if t[1] is not None]
+                k = len(targets)
+
+                # Fetch and flatten the single gate tensor
+                gate_tensor = self._get_backend_tensor(op["gate"], bound_params, k)
+                gate_matrix = gate_tensor.reshape((2**k, 2**k))
+
+                # --- THE CHUNKING LOGIC ---
+                # If adding this gate exceeds our budget, execute the CURRENT chunk first!
+                if chunk_k + k > max_fused_qubits and chunk_matrix is not None:
+                    
+                    # 1. Reshape and fire the tensordot for the accumulated chunk
+                    chunk_tensor = chunk_matrix.reshape((2,) * (2 * chunk_k))
+                    gate_input_axes = list(range(chunk_k, 2 * chunk_k))
+                    
+                    state = self.xp.tensordot(chunk_tensor, state, axes=(gate_input_axes, chunk_targets))
+                    state = self.xp.moveaxis(state, source=list(range(chunk_k)), destination=chunk_targets)
+                    
+                    # 2. Reset the chunk to empty
+                    chunk_matrix = None
+                    chunk_targets = []
+                    chunk_k = 0
+
+                # Accumulate the current gate into the chunk
+                if chunk_matrix is None:
+                    chunk_matrix = gate_matrix
+                else:
+                    chunk_matrix = self.xp.kron(chunk_matrix, gate_matrix)
+                
+                chunk_targets.extend(targets)
+                chunk_k += k
+
+            # --- FLUSH THE REMAINDER ---
+            # After the loop, if there is a partially filled chunk left over, execute it.
+            if chunk_matrix is not None:
+                chunk_tensor = chunk_matrix.reshape((2,) * (2 * chunk_k))
+                gate_input_axes = list(range(chunk_k, 2 * chunk_k))
+                
+                state = self.xp.tensordot(chunk_tensor, state, axes=(gate_input_axes, chunk_targets))
+                state = self.xp.moveaxis(state, source=list(range(chunk_k)), destination=chunk_targets)
+                
+        return state
+
+    def run(self, circuit=None, parameter_binds: dict = None, initial_state: ArrayLike = None) -> ArrayLike:
+        """
+        Executes the circuit and returns the final N-dimensional state tensor.
+        Accepts an optional dictionary of parameter bindings.
+        Allows passing a circuit directly, OR fallback to the attached circuit.
+        """
+        target_circuit = circuit or self.circuit
+
+        if target_circuit is None:
+            raise ValueError("No circuit provided to run, and no circuit attached to Simulator.")
+
+        # --- NEW: Merge Circuit parameters with temporary binds ---
+        # 1. Grab the circuit's inherent parameters (acting as the baseline)
+        final_binds = getattr(target_circuit, "parameters", {}).copy()
+
+        # 2. If the user passed explicit binds to this run(), they overwrite the baseline
+        if parameter_binds:
+            final_binds.update(parameter_binds)
+
+        num_qubits = target_circuit.num_qubits
+        if num_qubits == 0:
+            return self.xp.array([])
+        
+        if num_qubits == 0:
+            return self.xp.array([])
+
+        # 3. Initialize the state to |00...0>, or use existing
+        # --- NEW: State Injection Logic ---
+        # Below logic needs to be revisited.
+        if initial_state is not None:
+            # We MUST copy it so we don't accidentally mutate the previous circuit's memory!
+            state = initial_state.copy()
+            # Ensure it's reshaped to the tensor format our engine expects
+            state = state.reshape((2,) * num_qubits)
+        else:
+            # Default to all-zeros |00...0>
+            # Example: A 3-qubit state is shape (2, 2, 2). Only index [0, 0, 0] is 1.0.
+            state = self._allocate_initial_state(num_qubits)
+
+        state = self._run_ops[self.exec_mode](target_circuit, state, final_binds)
+        if self.exec_mode not in self._run_ops:
+            raise ValueError(f"Unknown exec_mode: '{self.exec_mode}'. Use 'sequential' or 'fused'.")
 
         target_circuit.state = state
 

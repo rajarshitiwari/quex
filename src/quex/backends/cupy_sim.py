@@ -24,9 +24,9 @@ class CupySimulator(NumpySimulator):
     Inherits the exact tensor contraction logic from NumpySimulator.
     """
 
-    def __init__(self):
+    def __init__(self, **kwargs):
         # 1. Trigger the standard setup (which sets self._circuit = None)
-        super().__init__()
+        super().__init__(**kwargs)
 
         # 2. Overwrite the math backend for VRAM
         if not HAS_CUPY:
