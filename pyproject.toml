@@ -1,22 +1,35 @@
 [project]
 name = "quex"
-version = "0.2.0"
+version = "0.3.0"
 description = "Simulator Backend for Quantum Computing"
 readme = "README.md"
 authors = [
     { name = "Rajarshi Tiwari", email = "rajarshi.tiwari@ichec.ie" }
 ]
-requires-python = ">=3.10, <3.13"
+requires-python = ">=3.11"
 dependencies = [
     "openqasm3[parser]>=1.0.1",
     "threadpoolctl>=3.6.0",
 ]
 
 [project.optional-dependencies]
-jax = [
-    "jax>=0.6.2",
-    "jaxlib>=0.6.2",
-]
+# ==========================================
+# 1. GRANULAR EXTRAS (For Power Users)
+# ==========================================
+jax-cpu = ["jax>=0.6.2", "jaxlib>=0.6.2"]
+jax-apple = ["jax>=0.6.2", "jaxlib>=0.6.2", "jax-metal; sys_platform == 'darwin' and platform_machine == 'arm64'"]
+jax-nvidia = ["jax[cuda12]>=0.6.2"]
+cupy-nvidia = ["cupy-cuda12x"]
+jax-amd = ["jax>=0.6.2", "jaxlib>=0.6.2", "jax-rocm60-plugin"]
+cupy-amd = ["cupy-rocm-7-0; python_version < '3.12'"]
+
+# ==========================================
+# 2. MACRO EXTRAS ("Batteries Included")
+# ==========================================
+cpu = ["quex[jax-cpu]"]
+metal = ["quex[jax-apple]"]
+nvidia = ["quex[jax-nvidia]", "quex[cupy-nvidia]"]
+amd = ["quex[jax-amd]", "quex[cupy-amd]"]
 
 [build-system]
 requires = ["hatchling"]
