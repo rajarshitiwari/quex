@@ -15,16 +15,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Get all history (Crucial for the changelog generator)
+          fetch-depth: 0 # Get all history
 
-      # --- 1. CHANGELOG GENERATION ---
-      - name: Generate Cumulative Changelog
-        uses: orhun/git-cliff-action@v3
+      # --- 1. SETUP UV FIRST ---
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
         with:
-          config: cliff.toml
-          args: --verbose
-        env:
-          OUTPUT: CHANGELOG.md
+            enable-cache: true
+            cache-dependency-glob: "uv.lock"
+
+      # --- 2. CHANGELOG GENERATION (The uvx way!) ---
+      - name: Generate Cumulative Changelog
+        # Downloads git-cliff in milliseconds and runs it natively
+        run: uvx git-cliff --config cliff.toml --output CHANGELOG.md
 
       - name: Commit Changelog Locally
         run: |
@@ -34,19 +37,12 @@ jobs:
           # Commit the file locally. We DO NOT push yet.
           git commit -m "docs: auto-update cumulative changelog" || echo "No changes to commit"
 
-      # --- 2. UV SETUP ---
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
-        with:
-            enable-cache: true
-            cache-dependency-glob: "uv.lock"
-        
+      # --- 3. VERSION BUMP & PUSH ---
       - name: Install dependencies
         run: |
             uv sync --dev
         
-      # --- 3. VERSION BUMP & PUSH ---
       - name: Bump version in pyproject.toml and Push All
         # This script modifies pyproject.toml, commits it with [skip ci], 
-        # and pushes BOTH the changelog commit and the version bump commit to main.
+        # and pushes BOTH commits to main simultaneously.
         run: uv run python scripts/bump-version.py
