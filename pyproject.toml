@@ -12,6 +12,15 @@ dependencies = [
     "threadpoolctl>=3.6.0",
 ]
 
+keywords = ["Quantum Execution", "Quantum Computing", "numpy", "jax", "cupy", "nvidia", "amd"]
+classifiers = ["Programming Language :: Python"]
+
+[project.urls]
+homepage = "https://github.com/ICHEC/quex"
+Documentation = "https://ichec.github.io/quex" 
+Repository = "https://github.com/ICHEC/qse.git"
+Issues = "https://github.com/ICHEC/qse/issues"
+
 [project.optional-dependencies]
 # ==========================================
 # 1. GRANULAR EXTRAS (For Power Users)
